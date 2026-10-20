@@ -1,0 +1,398 @@
+@import "tailwindcss";
+
+/* ------------------------------------------------------------------ *
+ * Frameworks theme tokens
+ *
+ * Colors taken from the real SEAL Frameworks site:
+ *   - brand violet #8b5cf6  (vocs.config.ts banner)
+ *   - deep indigo  #4339db  (SEAL/Initiative tag)
+ *
+ * Dark is the default, matching the live docs, but the contributor's
+ * choice wins — `useTheme` stamps data-theme="light" / "dark" on <html>
+ * and persists it. Every token below is defined for both themes, so no
+ * component ever needs a hardcoded color.
+ *
+ * `@theme inline` matters here: it makes utilities resolve to var(--fw-*)
+ * at use time rather than baking the dark value in, which is what lets the
+ * [data-theme] blocks below actually take effect.
+ * ------------------------------------------------------------------ */
+@theme inline {
+  --color-fw-bg: var(--fw-bg);
+  --color-fw-surface: var(--fw-surface);
+  --color-fw-surface-2: var(--fw-surface-2);
+  --color-fw-border: var(--fw-border);
+  --color-fw-border-soft: var(--fw-border-soft);
+
+  --color-fw-strong: var(--fw-strong);
+  --color-fw-text: var(--fw-text);
+  --color-fw-muted: var(--fw-muted);
+  --color-fw-faint: var(--fw-faint);
+
+  --color-brand: var(--fw-brand);
+  --color-brand-hover: var(--fw-brand-hover);
+  --color-brand-deep: var(--fw-brand-deep);
+  --color-brand-soft: var(--fw-brand-soft);
+
+  --color-add: var(--fw-add);
+  --color-add-soft: var(--fw-add-soft);
+  --color-del: var(--fw-del);
+  --color-del-soft: var(--fw-del-soft);
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* Dark — the default. Lifted off pure black so it reads as a document
+   surface rather than a terminal. */
+:root {
+  --fw-bg: #0f0f13;
+  --fw-surface: #17171d;
+  --fw-surface-2: #1e1e26;
+  --fw-border: #2c2c36;
+  --fw-border-soft: #23232b;
+
+  --fw-strong: #ffffff;
+  --fw-text: #e8e8ec;
+  --fw-muted: #a5a5b0;
+  --fw-faint: #75757f;
+
+  --fw-brand: #8b5cf6;
+  --fw-brand-hover: #a78bfa;
+  --fw-brand-deep: #4339db;
+  --fw-brand-soft: #211d3d;
+
+  --fw-add: #4ade80;
+  --fw-add-soft: rgba(34, 197, 94, 0.16);
+  --fw-del: #f87171;
+  --fw-del-soft: rgba(239, 68, 68, 0.14);
+
+  --fw-glow: rgba(139, 92, 246, 0.14);
+  --fw-code-bg: #0a0a0d;
+  --fw-shadow: 0 20px 60px -30px rgba(0, 0, 0, 0.9);
+
+  --fg: var(--fw-text);
+
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --fw-bg: #fbfbfd;
+  --fw-surface: #ffffff;
+  --fw-surface-2: #f4f4f8;
+  --fw-border: #e3e3ea;
+  --fw-border-soft: #ededf2;
+
+  --fw-strong: #101014;
+  --fw-text: #2f2f3a;
+  --fw-muted: #5c5c68;
+  --fw-faint: #8a8a96;
+
+  --fw-brand: #7c3aed;
+  --fw-brand-hover: #6d28d9;
+  --fw-brand-deep: #4339db;
+  --fw-brand-soft: #f2ecfe;
+
+  --fw-add: #15803d;
+  --fw-add-soft: rgba(34, 197, 94, 0.18);
+  --fw-del: #b91c1c;
+  --fw-del-soft: rgba(239, 68, 68, 0.13);
+
+  --fw-glow: rgba(139, 92, 246, 0.1);
+  --fw-code-bg: #f6f6fa;
+  --fw-shadow: 0 20px 50px -32px rgba(24, 24, 40, 0.35);
+
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background-color: var(--fw-bg);
+  color: var(--fw-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Subtle brand glow behind the wizard, echoing the site's violet accent. */
+.fw-app-bg {
+  background:
+    radial-gradient(60rem 40rem at 50% -10rem, var(--fw-glow), transparent 60%),
+    var(--fw-bg);
+}
+
+.fw-card-shadow {
+  box-shadow: var(--fw-shadow);
+}
+
+/* ------------------------------------------------------------------ *
+ * Welcome page — the three-frame demo.
+ *
+ * Both animations are opt-out via prefers-reduced-motion; MiniDemo also
+ * stops advancing frames entirely under that setting, so this is only the
+ * belt to its braces.
+ * ------------------------------------------------------------------ */
+.fw-demo-frame {
+  animation: fw-demo-in 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes fw-demo-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* The text cursor in frame one. An inline block rather than a border on the
+   text, so it sits at the end of the typed run without shifting it. */
+.fw-demo-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  background: var(--fw-brand);
+  animation: fw-demo-blink 1s steps(2, start) infinite;
+}
+@keyframes fw-demo-blink {
+  to {
+    visibility: hidden;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fw-demo-frame,
+  .fw-demo-caret {
+    animation: none;
+  }
+}
+
+/* Safari draws its own disclosure triangle even with list-style: none. */
+.fw-faq summary::-webkit-details-marker {
+  display: none;
+}
+
+/* ------------------------------------------------------------------ *
+ * Document typography — shared by the preview and the WYSIWYG editor,
+ * so what a contributor types looks like what they'll get.
+ * ------------------------------------------------------------------ */
+.prose-preview {
+  color: var(--fw-text);
+  line-height: 1.75;
+  font-size: 16px;
+}
+.prose-preview h1 {
+  font-size: 1.875rem;
+  font-weight: 700;
+  margin: 1.5rem 0 1rem;
+  line-height: 1.2;
+  color: var(--fw-strong);
+}
+.prose-preview h2 {
+  font-size: 1.4rem;
+  font-weight: 600;
+  margin: 2rem 0 0.75rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--fw-border);
+  color: var(--fw-strong);
+}
+.prose-preview h3 {
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin: 1.5rem 0 0.5rem;
+  color: var(--fw-strong);
+}
+.prose-preview h4 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 1.25rem 0 0.5rem;
+  color: var(--fw-strong);
+}
+.prose-preview p {
+  margin: 0.85rem 0;
+}
+.prose-preview a {
+  color: var(--fw-brand-hover);
+  text-decoration: underline;
+}
+.prose-preview ul,
+.prose-preview ol {
+  margin: 0.85rem 0;
+  padding-left: 1.5rem;
+}
+.prose-preview ul {
+  list-style: disc;
+}
+.prose-preview ol {
+  list-style: decimal;
+}
+.prose-preview li {
+  margin: 0.3rem 0;
+}
+.prose-preview blockquote {
+  border-left: 3px solid var(--fw-brand);
+  padding-left: 1rem;
+  margin: 1rem 0;
+  color: var(--fw-muted);
+}
+.prose-preview code {
+  background: var(--fw-surface-2);
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  font-size: 0.9em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.prose-preview pre {
+  background: var(--fw-code-bg);
+  border: 1px solid var(--fw-border);
+  color: var(--fw-text);
+  padding: 1rem;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 1rem 0;
+}
+.prose-preview pre code {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+}
+.prose-preview table {
+  border-collapse: collapse;
+  margin: 1rem 0;
+  width: 100%;
+}
+.prose-preview th,
+.prose-preview td {
+  border: 1px solid var(--fw-border);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+}
+.prose-preview th {
+  background: var(--fw-surface-2);
+  font-weight: 600;
+}
+.prose-preview hr {
+  border: none;
+  border-top: 1px solid var(--fw-border);
+  margin: 2rem 0;
+}
+.prose-preview img {
+  max-width: 100%;
+}
+/* GFM task lists (from <Checklist> content) */
+.prose-preview li:has(> input[type="checkbox"]) {
+  list-style: none;
+  margin-left: -1.25rem;
+}
+.prose-preview input[type="checkbox"] {
+  margin-right: 0.5rem;
+  accent-color: var(--fw-brand);
+  vertical-align: middle;
+}
+
+.prose-preview .fw-role-title {
+  margin: 0;
+  padding-top: 0.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--fw-muted);
+}
+.prose-preview .fw-attribution-empty {
+  margin: 0;
+}
+
+/* ------------------------------------------------------------------ *
+ * Review step — changes shown in place, in the rendered page.
+ * ------------------------------------------------------------------ */
+.prose-preview ins.fw-ins {
+  background: var(--fw-add-soft);
+  color: inherit;
+  text-decoration: none;
+  border-radius: 3px;
+  padding: 0.05em 0.15em;
+  box-shadow: inset 0 -1px 0 var(--fw-add);
+}
+/* Changed lines inside a code block. Markdown can't carry a mark in there, so
+   the review step reports line numbers and the preview paints them. */
+/* The highlight has to span the block's *content* width, not its visible width.
+   In a horizontally scrolling <pre>, `width: 100%` resolves against the visible
+   box, so a long line elsewhere in the snippet leaves the highlight cut short
+   and its padding pushing the rest of the line out of view. Letting the <code>
+   grow to its content and making each marked line a plain block gives every
+   line the same full width. */
+.prose-preview pre > code {
+  display: inline-block;
+  min-width: 100%;
+}
+.prose-preview .fw-code-ins,
+.prose-preview .fw-code-del {
+  display: block;
+  border-radius: 2px;
+}
+.prose-preview .fw-code-ins {
+  background: var(--fw-add-soft);
+  box-shadow: inset 2px 0 0 var(--fw-add);
+}
+.prose-preview .fw-code-del {
+  background: var(--fw-del-soft);
+  box-shadow: inset 2px 0 0 var(--fw-del);
+  text-decoration: line-through;
+  color: var(--fw-muted);
+}
+
+/* Where "N sections changed" just took you. Long enough to catch the eye after
+   the smooth scroll settles, then out of the way. */
+.prose-preview .fw-jump {
+  animation: fw-jump-flash 1.6s ease-out;
+  border-radius: 6px;
+}
+@keyframes fw-jump-flash {
+  0%,
+  55% {
+    background: var(--fw-glow);
+    box-shadow: 0 0 0 6px var(--fw-glow);
+  }
+  100% {
+    background: transparent;
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+
+.prose-preview del.fw-del {
+  background: var(--fw-del-soft);
+  color: var(--fw-muted);
+  text-decoration: line-through;
+  border-radius: 3px;
+  padding: 0.05em 0.15em;
+}
+
+/* ------------------------------------------------------------------ *
+ * WYSIWYG (TipTap/ProseMirror) — inherits .prose-preview typography so
+ * the editing surface and the preview are the same document.
+ * ------------------------------------------------------------------ */
+.fw-editor .ProseMirror {
+  outline: none;
+  /* Just enough to stay clickable. Anything taller leaves short sections
+     sitting in tall empty boxes. */
+  min-height: 1.5rem;
+}
+.fw-editor .ProseMirror > *:first-child {
+  margin-top: 0;
+}
+.fw-editor .ProseMirror > *:last-child {
+  margin-bottom: 0;
+}
+.fw-editor .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: var(--fw-faint);
+}

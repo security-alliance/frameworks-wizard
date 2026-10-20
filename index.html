@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Improve a Frameworks page</title>
+    <!-- Same favicon as the live docs site (vocs.config.ts `iconUrl`). -->
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="https://frameworks-static.s3.us-east-2.amazonaws.com/images/logo/favicon.svg"
+    />
+    <meta
+      name="description"
+      content="Suggest an improvement to the SEAL Security Frameworks. No coding required."
+    />
+    <!-- Apply the saved theme before first paint so light-mode users don't get
+         a dark flash. Dark is the default when nothing is stored. -->
+    <script>
+      try {
+        var t = localStorage.getItem('fw-theme') === 'light' ? 'light' : 'dark'
+        document.documentElement.dataset.theme = t
+        // Also stamped for the docs-site stylesheets the preview imports, whose
+        // dark mode keys off Vocs' own attribute. Kept in sync by useTheme.
+        document.documentElement.dataset.vocsTheme = t
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
