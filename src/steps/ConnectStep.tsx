@@ -1,5 +1,6 @@
 import { Card, Button, ShieldIcon, CheckIcon } from '../components/ui.js'
 import { REVOKE_URL } from '../lib/github.js'
+import { AUTH_API } from '../lib/useAuth.js'
 import type { AuthState } from '../lib/types.js'
 
 // Sign-in. Auth state lives in `useAuth` at the app level so this step and the
@@ -7,7 +8,7 @@ import type { AuthState } from '../lib/types.js'
 //
 // Security posture the UI relies on: the browser NEVER receives a GitHub token.
 // It only asks our backend who is signed in and starts the flow by navigating to
-// GET /api/auth/login. All token handling is server-side.
+// GET /wizard/api/auth/login. All token handling is server-side.
 //
 // `authError` arrives as a prop rather than being read from the address here:
 // the OAuth params are stripped from the URL as soon as the router has acted on
@@ -46,7 +47,7 @@ export function ConnectStep({
             </p>
           )}
           {/* Real navigation (not fetch): the backend 302-redirects to GitHub. */}
-          <a href="/api/auth/login" className="mt-6 inline-block">
+          <a href={`${AUTH_API}/login`} className="mt-6 inline-block">
             <Button>Continue with GitHub</Button>
           </a>
           <p className="mt-3 text-xs text-fw-faint">

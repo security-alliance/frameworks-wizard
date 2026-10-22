@@ -36,19 +36,24 @@ pnpm build      # typecheck + production build into dist/
 ```
 
 `pnpm dev` runs the frontend only. Pages are read straight from GitHub's public endpoints, so
-everything except signing in works locally. Sign-in needs the backend in `functions/`; try it on a
-Cloudflare Pages preview deployment.
+everything except signing in works locally. Sign-in needs the Worker in `functions/` and its
+secrets.
 
-## Deploying (Cloudflare Pages)
+## Deploying (Cloudflare Workers)
 
-Create a Pages project connected to this repo with:
+The app is one Worker, served at `https://frameworks.securityalliance.org/wizard/`. Cloudflare
+serves the built frontend from `dist/` and runs `functions/` for `/wizard/api/*`. The routes in
+`wrangler.jsonc` only claim `/wizard` and `/wizard/*`; every other path on the domain still goes to
+the docs site. The first deploy creates them.
 
-- **Root directory:** `/`
-- **Build command:** `pnpm install --frozen-lockfile && pnpm build`
-- **Build output directory:** `dist`
-- **Node version:** 24, picked up from `.nvmrc`
+Deploys run from Cloudflare's Git integration (Workers & Pages → Create → Import a repository),
+with:
 
-Set these as secrets on the Pages project:
+- **Worker name:** `frameworks-wizard`, matching `name` in `wrangler.jsonc`
+- **Build command:** `pnpm build`
+- **Deploy command:** `pnpm exec wrangler deploy`
+
+Set these as secrets on the Worker (Settings → Variables and Secrets, type **Secret**):
 
 | Variable               | What it is                                                     |
 | ---------------------- | -------------------------------------------------------------- |
@@ -56,15 +61,15 @@ Set these as secrets on the Pages project:
 | `GITHUB_CLIENT_SECRET` | That app's client secret                                       |
 | `SESSION_SECRET`       | Long random string that encrypts the session cookie; generate one with `openssl rand -hex 32` |
 
-The GitHub App's callback URL must be `https://<your-domain>/api/auth/callback`. If any variable
-is missing, the auth endpoints return a 500 rather than half-working.
+The GitHub App's callback URL must be
+`https://frameworks.securityalliance.org/wizard/api/auth/callback`. If any variable is missing, the auth endpoints return a 500
+rather than half-working.
 
-The app is served from the domain root and keeps its routes in the URL hash, so no SPA rewrite
-rule is needed.
+The app keeps its routes in the URL hash, so no SPA rewrite rule is needed.
 
 ## Layout
 
 - `src/` is the React frontend.
-- `functions/` holds the Cloudflare Pages Functions for sign-in (`/api/auth/*`).
+- `functions/` is the Worker that handles sign-in (`/wizard/api/auth/*`); `index.ts` is its entry.
 - `src/components/site/` contains copies of components from the frameworks repo, so the preview
   matches the live site. Keep them in sync with upstream; syncing them automatically is planned.

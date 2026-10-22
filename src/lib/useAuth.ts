@@ -5,8 +5,12 @@ import type { AuthState, AuthStatus, AuthUser } from './types.js'
 // source instead of polling separately.
 //
 // The browser never receives a GitHub token. It only asks our backend who is
-// signed in (GET /api/auth/me) and starts the flow by navigating to
-// GET /api/auth/login. All token handling stays server-side.
+// signed in (GET /wizard/api/auth/me) and starts the flow by navigating to
+// GET /wizard/api/auth/login. All token handling stays server-side.
+
+/** The auth endpoints, under the base path the app is built for. */
+export const AUTH_API = `${import.meta.env.BASE_URL}api/auth`
+
 export function useAuth(): AuthState {
   const [state, setState] = useState<{ status: AuthStatus; user?: AuthUser }>({
     status: 'loading',
@@ -14,7 +18,7 @@ export function useAuth(): AuthState {
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch('/api/auth/me', { credentials: 'same-origin' })
+      const res = await fetch(`${AUTH_API}/me`, { credentials: 'same-origin' })
       if (!res.ok) return setState({ status: 'unavailable' })
       const data = (await res.json()) as AuthUser
       setState({ status: data.authenticated ? 'in' : 'out', user: data })
@@ -30,7 +34,7 @@ export function useAuth(): AuthState {
 
   const signOut = useCallback(async () => {
     try {
-      await fetch('/api/auth/logout', {
+      await fetch(`${AUTH_API}/logout`, {
         method: 'POST',
         credentials: 'same-origin',
       })

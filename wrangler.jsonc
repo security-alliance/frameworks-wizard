@@ -1,0 +1,21 @@
+// Cloudflare Worker config. `wrangler deploy` uploads the frontend in dist/ and
+// the auth code in functions/, and creates the routes below. The routes only
+// claim /wizard on the docs domain; every other path stays with the docs site.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "frameworks-wizard",
+  "main": "functions/index.ts",
+  "compatibility_date": "2026-10-01",
+  // No workers.dev address: the docs domain is the only way in.
+  "workers_dev": false,
+  "routes": [
+    { "pattern": "frameworks.securityalliance.org/wizard", "zone_name": "securityalliance.org" },
+    { "pattern": "frameworks.securityalliance.org/wizard/*", "zone_name": "securityalliance.org" }
+  ],
+  "assets": {
+    "directory": "dist",
+    // Requests for the API skip the file lookup and go straight to the code.
+    "run_worker_first": ["/wizard/api/*"]
+  },
+  "observability": { "enabled": true }
+}

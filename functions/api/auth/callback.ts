@@ -1,4 +1,4 @@
-// GET /api/auth/callback — GitHub redirects here with ?code&state.
+// GET /wizard/api/auth/callback — GitHub redirects here with ?code&state.
 // Verify the CSRF state, exchange the code for a user token (server-side, the
 // client secret never leaves this function), look up the user, and store an
 // encrypted session cookie. On any failure we bounce back to the app with an
@@ -8,7 +8,7 @@ import { parseCookies, serializeCookie } from '../../_lib/cookies.js'
 import { timingSafeEqual, verify } from '../../_lib/crypto.js'
 import { writeSession } from '../../_lib/session.js'
 import { json, missingEnv } from '../../_lib/http.js'
-import type { Ctx } from '../../_lib/env.js'
+import { BASE_PATH, type Ctx } from '../../_lib/env.js'
 
 const STATE_COOKIE = 'cw_oauth_state'
 
@@ -54,7 +54,7 @@ export async function onRequestGet({ request, env }: Ctx): Promise<Response> {
       client_id: env.GITHUB_CLIENT_ID,
       client_secret: env.GITHUB_CLIENT_SECRET,
       code,
-      redirect_uri: `${url.origin}/api/auth/callback`,
+      redirect_uri: `${url.origin}${BASE_PATH}/api/auth/callback`,
     }),
   })
   const tokenData = await tokenRes
@@ -90,7 +90,7 @@ export async function onRequestGet({ request, env }: Ctx): Promise<Response> {
   const headers = new Headers()
   headers.append('Set-Cookie', sessionCookie)
   headers.append('Set-Cookie', serializeCookie(STATE_COOKIE, '', { maxAge: 0 }))
-  headers.set('Location', `${url.origin}/?connected=1`)
+  headers.set('Location', `${url.origin}${BASE_PATH}/?connected=1`)
   return new Response(null, { status: 302, headers })
 }
 
@@ -98,6 +98,6 @@ function backToApp(origin: string, error: string): Response {
   const headers = new Headers()
   // Clear any stale state cookie on the way out.
   headers.append('Set-Cookie', serializeCookie(STATE_COOKIE, '', { maxAge: 0 }))
-  headers.set('Location', `${origin}/?auth_error=${encodeURIComponent(error)}`)
+  headers.set('Location', `${origin}${BASE_PATH}/?auth_error=${encodeURIComponent(error)}`)
   return new Response(null, { status: 302, headers })
 }

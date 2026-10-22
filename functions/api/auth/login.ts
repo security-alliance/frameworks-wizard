@@ -1,11 +1,11 @@
-// GET /api/auth/login — start the GitHub App user-authorization flow.
+// GET /wizard/api/auth/login — start the GitHub App user-authorization flow.
 // We mint a random CSRF `state`, sign it, stash it in a short-lived HttpOnly
 // cookie, and redirect the user to GitHub. The callback verifies both.
 
 import { serializeCookie } from '../../_lib/cookies.js'
 import { sign } from '../../_lib/crypto.js'
 import { json, missingEnv } from '../../_lib/http.js'
-import type { Ctx } from '../../_lib/env.js'
+import { BASE_PATH, type Ctx } from '../../_lib/env.js'
 
 const STATE_COOKIE = 'cw_oauth_state'
 
@@ -14,7 +14,7 @@ export async function onRequestGet({ request, env }: Ctx): Promise<Response> {
   if (missing) return json({ error: `Server not configured: missing ${missing}` }, 500)
 
   const origin = new URL(request.url).origin
-  const redirectUri = `${origin}/api/auth/callback`
+  const redirectUri = `${origin}${BASE_PATH}/api/auth/callback`
 
   // CSRF protection: unguessable, signed state echoed back by GitHub.
   const state = await sign(crypto.randomUUID(), env.SESSION_SECRET)

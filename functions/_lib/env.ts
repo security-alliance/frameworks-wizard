@@ -1,4 +1,4 @@
-// The bindings the auth backend expects, set as Pages project secrets.
+// The bindings the auth backend expects, set as Worker secrets.
 //
 // Naming them is the one thing types genuinely buy this layer: `env` is
 // otherwise an untyped bag, and a misspelled `env.GITHUB_CLIENT_SECERT` reads
@@ -13,5 +13,12 @@ export interface Env {
   SESSION_SECRET: string
 }
 
-/** The context a Pages Function handler receives, narrowed to our bindings. */
-export type Ctx = EventContext<Env, string, unknown>
+/** What `index.ts` hands each auth handler. */
+export interface Ctx {
+  request: Request
+  env: Env
+}
+
+/** The path the app is served under, on every domain it's deployed to. Keep in
+ *  sync with `base` in vite.config.js and the routes in wrangler.jsonc. */
+export const BASE_PATH = '/wizard'

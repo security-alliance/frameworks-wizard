@@ -1,4 +1,4 @@
-// GET /api/auth/me — the only thing the browser is allowed to know about auth:
+// GET /wizard/api/auth/me — the only thing the browser is allowed to know about auth:
 // whether there's a session, and the signed-in user's PUBLIC identity.
 // The GitHub token is deliberately never included in this response.
 

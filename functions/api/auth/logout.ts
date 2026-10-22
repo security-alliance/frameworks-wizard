@@ -1,4 +1,4 @@
-// POST /api/auth/logout — clear the session cookie. POST-only so a stray link
+// POST /wizard/api/auth/logout — clear the session cookie. POST-only so a stray link
 // or prefetch can't sign the user out.
 
 import { clearSession } from '../../_lib/session.js'
