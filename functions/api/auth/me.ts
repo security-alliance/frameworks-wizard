@@ -3,13 +3,8 @@
 // The GitHub token is deliberately never included in this response.
 
 import { readSession } from '../../_lib/session.js'
-import { json, missingEnv } from '../../_lib/http.js'
+import { PRIVATE, json, missingEnv } from '../../_lib/http.js'
 import type { Ctx } from '../../_lib/env.js'
-
-// Who is signed in is per-request and per-person. `no-store` keeps it out of
-// every cache between here and the browser, so the next visitor on a shared
-// machine — or behind a shared proxy — can't be handed the last one's identity.
-const PRIVATE = { 'Cache-Control': 'no-store, private', Vary: 'Cookie' }
 
 export async function onRequestGet({ request, env }: Ctx): Promise<Response> {
   const missing = missingEnv(env)

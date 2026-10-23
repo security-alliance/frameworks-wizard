@@ -1,3 +1,5 @@
+import { diffArrays } from 'diff'
+
 // Markdown line-shape utilities shared by the editor, the block model and the
 // round-trip safety gate.
 //
@@ -8,8 +10,8 @@
 
 // The repo's hard-wrap width. Measured, not guessed: across docs/pages the 90th
 // percentile line is 116 chars and the 95th is 119, so 120 is the house style.
-// Re-wrapping at any other width would rewrite whole paragraphs the contributor
-// never touched.
+// About one page in twelve is wrapped narrower, though, so a page's own width
+// is measured by `wrapWidth`, and this is the fallback and the ceiling.
 const WRAP_AT = 120
 
 const FENCE_RE = /^\s*(`{3,}|~{3,})/
@@ -58,6 +60,11 @@ export function wrapMarkdown(md: string, width: number = WRAP_AT): string {
   return out.join('\n')
 }
 
+// Words that start a list item, heading, blockquote, rule or JSX when they open
+// a line, so a wrapped line must never begin with one: `-`, `+`, `*`, `#`…,
+// `1.`, `1)`, `---`, `===`, or anything starting with `>` or `<`.
+const LINE_START_SYNTAX_RE = /^(?:[-+*]|#{1,6}|\d+[.)]|[-=*_]{2,}|[<>].*)$/
+
 function wrapWords(
   text: string,
   width: number,
@@ -74,8 +81,10 @@ function wrapWords(
   for (const word of words) {
     const candidate = empty ? cur + word : cur + ' ' + word
     // A single over-long word (usually a URL) is left to overflow rather than
-    // broken, which would corrupt the link.
-    if (!empty && candidate.length > width) {
+    // broken, which would corrupt the link. So is a word that would mean
+    // something else at the start of a line: "[Audit](…) - What to expect"
+    // broken before the dash would publish a bullet point nobody wrote.
+    if (!empty && candidate.length > width && !LINE_START_SYNTAX_RE.test(word)) {
       rows.push(cur)
       cur = contPrefix + word
     } else {
@@ -85,6 +94,136 @@ function wrapWords(
   }
   rows.push(cur)
   return rows
+}
+
+/**
+ * The width a page is hard-wrapped at, measured from its own lines.
+ *
+ * Re-wrapping a changed paragraph at the page's own width is what keeps the
+ * lines before the change identical. A line counts when the next line carries
+ * on the same paragraph, so someone chose to break it there, and when it holds
+ * more than one word: a line that is a single over-long word (usually a URL)
+ * overflows any width and says nothing about it. The widest such line is the
+ * width. A page with none falls back to WRAP_AT, which is also the ceiling.
+ */
+export function wrapWidth(md: string): number {
+  const lines = md.split('\n')
+  let widest = 0
+  let fence: string | null = null
+
+  for (let i = 0; i < lines.length - 1; i++) {
+    const line = lines[i]
+    const f = line.match(FENCE_RE)
+    if (fence) {
+      if (f && f[1][0] === fence[0] && f[1].length >= fence.length) fence = null
+      continue
+    }
+    if (f) {
+      fence = f[1]
+      continue
+    }
+
+    const here = peelQuote(line)
+    const next = peelQuote(lines[i + 1])
+    const continued =
+      here.rest.trim() !== '' &&
+      next.rest.trim() !== '' &&
+      here.depth === next.depth &&
+      !ATOMIC_RE.test(here.rest) &&
+      !BLOCK_START_RE.test(next.rest) &&
+      !FENCE_RE.test(next.rest) &&
+      !/ {2}$/.test(line)
+    const words = here.rest.replace(/^\s*(?:[-*+]\s+|\d+[.)]\s+)/, '').trim()
+    if (continued && /\s/.test(words)) widest = Math.max(widest, line.length)
+  }
+  return widest ? Math.min(widest, WRAP_AT) : WRAP_AT
+}
+
+// Lines that are complete on their own: headings, table rows and JSX.
+const ATOMIC_RE = /^\s*(?:#{1,6}\s|\||<)/
+
+/**
+ * Split markdown into the groups of lines that make up each paragraph, list
+ * item, heading, table row or fenced block, and each run of blank lines.
+ * Joining every group's lines with '\n' gives back the text exactly.
+ */
+function lineGroups(md: string): string[][] {
+  const groups: string[][] = []
+  let fence: string | null = null
+  // The group the next line might continue.
+  let open: { lines: string[]; depth: number; blank: boolean; atomic: boolean } | null = null
+
+  for (const line of md.split('\n')) {
+    const f = line.match(FENCE_RE)
+    if (fence && open) {
+      open.lines.push(line)
+      if (f && f[1][0] === fence[0] && f[1].length >= fence.length) {
+        fence = null
+        open = null
+      }
+      continue
+    }
+    if (f) {
+      fence = f[1]
+      open = { lines: [line], depth: 0, blank: false, atomic: true }
+      groups.push(open.lines)
+      continue
+    }
+
+    const { depth, rest } = peelQuote(line)
+    const blank = rest.trim() === ''
+    const continues =
+      open !== null &&
+      open.depth === depth &&
+      (blank
+        ? open.blank
+        : !open.blank &&
+          !open.atomic &&
+          !BLOCK_START_RE.test(rest) &&
+          // Two trailing spaces are a markdown hard line break — a real one.
+          !/ {2}$/.test(open.lines[open.lines.length - 1]))
+    if (continues && open) {
+      open.lines.push(line)
+      continue
+    }
+    open = { lines: [line], depth, blank, atomic: !blank && ATOMIC_RE.test(rest) }
+    groups.push(open.lines)
+  }
+  return groups
+}
+
+/**
+ * `next`, with every paragraph, list item and heading whose content didn't
+ * change put back exactly as it was in `original`.
+ *
+ * The editor hands back a whole section at a time, re-serialized, so every
+ * paragraph in it comes back re-wrapped, the untouched ones included. On a page
+ * wrapped narrower than the editor wraps, a one-word edit turned into a diff of
+ * every paragraph around it, burying the actual change. Content is compared
+ * with `sameContent`, the same test that decides whether a section changed at
+ * all, so the result always says exactly what the editor said.
+ */
+export function keepUntouched(original: string, next: string): string {
+  const was = lineGroups(original)
+  const now = lineGroups(next)
+  const join = (g: string[]) => g.join('\n')
+
+  const out: string[][] = []
+  let w = 0
+  let n = 0
+  for (const change of diffArrays(was.map(join), now.map(join), { comparator: sameContent })) {
+    if (change.removed) {
+      w += change.count
+    } else if (change.added) {
+      out.push(...now.slice(n, n + change.count))
+      n += change.count
+    } else {
+      out.push(...was.slice(w, w + change.count))
+      w += change.count
+      n += change.count
+    }
+  }
+  return out.map(join).join('\n')
 }
 
 /** One markdown block mid-unwrap: `atomic` lines never absorb the next line. */
@@ -155,9 +294,11 @@ export function unwrapMarkdown(md: string): string {
  * these plainly (428 pages contain no `\*`, `\[` or `\_` at all, and one single
  * `&gt;`), so leaving them in would spray a contributor's paragraph with
  * punctuation they never typed.
+ *
+ * `width` is the page's own, from `wrapWidth`.
  */
-export function toSourceMarkdown(md: string): string {
-  return plainAngles(wrapMarkdown(tidyEscapes(md)))
+export function toSourceMarkdown(md: string, width: number = WRAP_AT): string {
+  return plainAngles(wrapMarkdown(tidyEscapes(md), width))
 }
 
 // Escapes that mean nothing where TipTap puts them.

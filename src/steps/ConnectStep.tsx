@@ -37,9 +37,13 @@ export function ConnectStep({
         <>
           <p className="mt-3 text-sm leading-relaxed text-fw-muted">
             We use GitHub accounts to credit contributors. Signing in takes a few
-            seconds and doesn&apos;t require you to know anything about GitHub.
-            We never see your password, and we only ask for permission to submit
-            your suggestion for you.
+            seconds and doesn&apos;t require you to know anything about GitHub,
+            and we never see your password.
+          </p>
+          <p className="mt-3 text-sm leading-relaxed text-fw-muted">
+            The first time you send a suggestion, we&apos;ll walk you through
+            two one-time steps on GitHub: making your own copy of the docs, and
+            letting the wizard save your changes to that copy.
           </p>
           {authError && (
             <p className="mt-4 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-400">
@@ -87,7 +91,9 @@ export function ConnectStep({
               <span className="text-fw-text">
                 Settings → Applications → Authorized GitHub Apps
               </span>
-              , then remove this wizard.
+              , then remove this wizard. If you gave it access to your copy of
+              the docs, uninstall it under{' '}
+              <span className="text-fw-text">Installed GitHub Apps</span> too.
             </p>
             <a
               href={REVOKE_URL}

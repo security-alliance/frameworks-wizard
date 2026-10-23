@@ -5,8 +5,13 @@ import type { ContributorDirectory, FrameworkGroup, PageEntry } from './types.js
 // endpoints. Anything that needs the user's GitHub token lives in the backend
 // (functions/).
 
-export const REPO = 'security-alliance/frameworks'
+// `security-alliance/frameworks`, from `vars` in wrangler.jsonc, where the
+// backend reads it too. vite.config.js swaps the name below for that text at
+// build time; the declaration only tells TypeScript it will be there.
+declare const __UPSTREAM_REPO__: string
+export const REPO = __UPSTREAM_REPO__
 // PRs target `develop`, never `main`. It is also the repo's default branch.
+// Keep in sync with BRANCH in functions/_lib/env.ts.
 export const BRANCH = 'develop'
 
 // GitHub's own list of apps a user has authorized — the only place access to

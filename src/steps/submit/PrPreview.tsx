@@ -1,7 +1,14 @@
 import { useState } from 'react'
+import type { ReactNode } from 'react'
 import { REPO, BRANCH } from '../../lib/github.js'
-import { titleize } from '../../lib/format.js'
-import { buildPrBody, buildPrTitle, TEMPLATE_LINES } from '../../lib/prTemplate.js'
+import {
+  buildPrBody,
+  buildPrTitle,
+  handle,
+  prParts,
+  TEMPLATE_LINES,
+  TEMPLATE_SECTIONS,
+} from '../../lib/prTemplate.js'
 import type { PrAnswers } from '../../lib/prTemplate.js'
 import type { AuthUser, PageEntry, Person } from '../../lib/types.js'
 
@@ -43,10 +50,9 @@ export default function PrPreview({
   const [raw, setRaw] = useState(false)
 
   const title = buildPrTitle(current)
-  const trimmed = note.trim()
   const who = user?.name || user?.login
-  // Same condition `buildPrBody` uses for its stewardship callout.
-  const volunteering = !!answers.stewardInterest && stewards.length === 0
+  // The same parts `buildPrBody` writes out, so the preview can't drift from it.
+  const parts = prParts({ note, answers, current, contributors, stewards })
 
   return (
     <div className="overflow-hidden rounded-xl border border-fw-border bg-fw-surface-2/40">
@@ -105,64 +111,64 @@ export default function PrPreview({
             {buildPrBody({ note, answers, current, contributors, stewards })}
           </pre>
         ) : (
-          <div className="mt-3.5 rounded-lg border border-fw-border bg-fw-surface p-3.5">
-            <p className="text-[12px] font-semibold text-fw-strong">
-              Frameworks PR Checklist
-            </p>
-
-            {/* The note, where it lands. An empty one is shown as the PR would
-                show it — a maintainer opening this would find that sentence and
-                nothing else, which is a more useful thing to know now than
-                after it's sent. */}
-            <div className="mt-2.5 border-l-2 border-fw-border pl-3">
-              {trimmed ? (
-                <p className="text-[13px] leading-relaxed whitespace-pre-wrap text-fw-text">
-                  {trimmed}
+          <div className="mt-3.5 space-y-3.5 rounded-lg border border-fw-border bg-fw-surface p-3.5">
+            <section>
+              <Heading>{TEMPLATE_SECTIONS.change}</Heading>
+              {/* The note, where it lands. Sending needs one, so an empty box
+                  shows where it will go rather than what a PR without one
+                  would say. */}
+              {parts.note ? (
+                <p className="mt-1.5 text-[13px] leading-relaxed whitespace-pre-wrap text-fw-text">
+                  {parts.note}
                 </p>
               ) : (
-                <p className="text-[13px] text-fw-faint italic">
-                  No note given.
+                <p className="mt-1.5 text-[13px] text-fw-faint italic">
+                  Your note goes here.
                 </p>
               )}
-            </div>
-
-            <ul className="mt-3 space-y-1.5">
-              <Tick on>{TEMPLATE_LINES.describe}</Tick>
-              <Tick on={contributors.length > 0}>{TEMPLATE_LINES.contributors}</Tick>
-              {stewards.length > 0 ? (
-                <Tick on>{TEMPLATE_LINES.steward}</Tick>
-              ) : (
-                <Tick on={!!answers.stewardInterest}>
-                  {TEMPLATE_LINES.stewardInterest}
-                </Tick>
+              <ul className="mt-2.5 list-disc space-y-1 pl-4 text-[12px] text-fw-muted">
+                {parts.page && (
+                  <li>
+                    <span className="font-semibold text-fw-text">Page:</span>{' '}
+                    <span className="font-mono text-[11px]">{parts.page.rel}</span>
+                  </li>
+                )}
+                {parts.people.map((line) => (
+                  <li key={line.label}>
+                    <span className="font-semibold text-fw-text">{line.label}:</span>{' '}
+                    <Handles people={line.people} />
+                  </li>
+                ))}
+              </ul>
+              {parts.volunteer && (
+                <p className="mt-2 text-[12px] text-fw-muted">
+                  <span className="font-semibold text-fw-text">
+                    This framework has no steward yet.
+                  </span>{' '}
+                  The contributor has offered to take it on.
+                </p>
               )}
-              <Tick on={!!answers.discord}>{TEMPLATE_LINES.discord}</Tick>
-              <Tick on={!!answers.typos}>{TEMPLATE_LINES.typos}</Tick>
-            </ul>
+            </section>
 
-            {(contributors.length > 0 || stewards.length > 0 || volunteering) && (
-              <div className="mt-3 space-y-1 border-t border-fw-border pt-3 text-[12px] text-fw-muted">
-                {contributors.length > 0 && (
-                  <p>
-                    Credited on this page: <Handles people={contributors} />
-                  </p>
-                )}
-                {stewards.length > 0 && (
-                  <p>
-                    Review requested from the framework steward:{' '}
-                    <Handles people={stewards} />
-                  </p>
-                )}
-                {volunteering && current && (
-                  <p>
-                    <span className="font-semibold text-fw-text">
-                      {titleize(current.framework)} has no steward.
-                    </span>{' '}
-                    The contributor has expressed interest in taking it on.
-                  </p>
-                )}
-              </div>
+            <section>
+              <Heading>{TEMPLATE_SECTIONS.type}</Heading>
+              <ul className="mt-1.5">
+                <Tick>{TEMPLATE_LINES.type}</Tick>
+              </ul>
+            </section>
+
+            {parts.applicable.length > 0 && (
+              <section>
+                <Heading>{TEMPLATE_SECTIONS.applicable}</Heading>
+                <ul className="mt-1.5 space-y-1.5">
+                  {parts.applicable.map((line) => (
+                    <Tick key={line}>{line}</Tick>
+                  ))}
+                </ul>
+              </section>
             )}
+
+            <p className="text-[12px] text-fw-faint italic">{parts.footer}</p>
           </div>
         )}
 
@@ -178,34 +184,36 @@ export default function PrPreview({
   )
 }
 
-function Tick({ on, children }: { on?: boolean; children: string }) {
+// A section heading, as GitHub draws the template's `###`.
+const Heading = ({ children }: { children: ReactNode }) => (
+  <h5 className="text-[12px] font-semibold text-fw-strong">{children}</h5>
+)
+
+// Every line listed is ticked: lines that don't apply are left out of the pull
+// request altogether.
+function Tick({ children }: { children: string }) {
   return (
     <li className="flex gap-2 text-[12px] leading-relaxed">
       <span
         aria-hidden
-        className={`mt-px flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[3px] border text-[9px] font-bold ${
-          on
-            ? 'border-brand bg-brand text-white'
-            : 'border-fw-border bg-fw-surface-2 text-transparent'
-        }`}
+        className="mt-px flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[3px] border border-brand bg-brand text-[9px] font-bold text-white"
       >
         ✓
       </span>
-      {/* An unticked box is something not done, which is not the same as
-          something withdrawn. Striking it through would say the second. */}
-      <span className={on ? 'text-fw-muted' : 'text-fw-faint'}>{children}</span>
-      <span className="sr-only">{on ? '(ticked)' : '(not ticked)'}</span>
+      <span className="text-fw-muted">{children}</span>
+      <span className="sr-only">(ticked)</span>
     </li>
   )
 }
 
-// `@handle @handle` — as the mention will actually read once GitHub has it.
+// `@handle @handle` — as the mention will actually read once GitHub has it,
+// which on a test copy is without the @ (see `handle`).
 const Handles = ({ people }: { people: Person[] }) => (
   <>
     {people.map((p, i) => (
       <span key={p.slug}>
         {i > 0 && ' '}
-        <span className="font-medium text-brand-hover">@{p.slug}</span>
+        <span className="font-medium text-brand-hover">{handle(p.slug)}</span>
       </span>
     ))}
   </>

@@ -12,11 +12,14 @@ import type { Block } from '../../lib/types.js'
 // toolbar it drives sits in the sticky header.
 export default function BlockEditor({
   blocks,
+  wrap,
   onChangeBlock,
   focus,
   onFocusEditor,
 }: {
   blocks: Block[]
+  /** The page's hard-wrap width, from `wrapWidth`. */
+  wrap: number
   onChangeBlock: (id: string, text: string) => void
   /** Focus mode. The measure grows with the card, so the column doesn't sit in
    *  the middle of a wider box with new gutters on either side of it. */
@@ -42,6 +45,7 @@ export default function BlockEditor({
               <ProseBlock
                 key={block.id}
                 block={block}
+                wrap={wrap}
                 onChange={onChangeBlock}
                 onFocusEditor={onFocusEditor}
               />

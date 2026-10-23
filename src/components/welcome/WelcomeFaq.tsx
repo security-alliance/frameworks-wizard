@@ -26,7 +26,7 @@ interface Faq {
 const FAQS: Faq[] = [
   {
     q: 'Do I need to know GitHub, or git?',
-    a: 'No. You need a GitHub account, which is free and takes a minute to make, and that is the whole of it. There is no branch to name, no commit to write, nothing to install and no command to run. The wizard does that part, and you never see it.',
+    a: 'No. You need a GitHub account, which is free and takes a minute to make. There is no branch to name, no commit to write and no command to run. The first time you send, the wizard walks you through two short steps on GitHub to set up your own copy of the docs; after that, it does the rest, and you never see it.',
   },
   {
     q: 'What exactly happens when I press send?',

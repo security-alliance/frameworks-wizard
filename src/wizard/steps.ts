@@ -32,9 +32,6 @@ export interface Step {
   id: StepId
   label: string
   sub: string
-  /** The step's real action isn't available yet, so the nav offers "Skip for
-   *  now" instead of "Continue". */
-  gated?: boolean
   /** The step is about a particular docs page, and so belongs in the URL as
    *  `?page=…`. The steps without it read the same whichever page is selected,
    *  and carrying the parameter there only made the address bar noisy. */
@@ -47,8 +44,8 @@ export const STEPS: Step[] = [
   { id: 'choose', label: 'Choose', sub: 'Pick a page', page: true },
   { id: 'edit', label: 'Write', sub: 'Make your changes', page: true },
   { id: 'review', label: 'Check', sub: 'Read it back', page: true },
-  { id: 'submit', label: 'Send', sub: 'Submit for review', gated: true, page: true },
-  { id: 'done', label: 'Done', sub: 'All set', gated: true },
+  { id: 'submit', label: 'Send', sub: 'Submit for review', page: true },
+  { id: 'done', label: 'Done', sub: 'All set' },
 ]
 
 export const stepIndex = (id: string): number => STEPS.findIndex((s) => s.id === id)

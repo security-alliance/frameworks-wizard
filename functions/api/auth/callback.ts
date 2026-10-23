@@ -12,10 +12,11 @@ import { BASE_PATH, type Ctx } from '../../_lib/env.js'
 
 const STATE_COOKIE = 'cw_oauth_state'
 
-/** GitHub's `POST /login/oauth/access_token` response. */
+/** GitHub's `POST /login/oauth/access_token` response. It also carries a
+ *  refresh token, valid for six months, which is deliberately not kept: the
+ *  session ends when the 8-hour token does, and signing in again is one click. */
 interface TokenResponse {
   access_token?: string
-  refresh_token?: string
   /** Seconds, for GitHub Apps with expiring tokens. */
   expires_in?: number
 }
@@ -62,7 +63,7 @@ export async function onRequestGet({ request, env }: Ctx): Promise<Response> {
     .catch((): TokenResponse => ({}))
   if (!tokenData.access_token) return backToApp(url.origin, 'token_exchange_failed')
 
-  // Identify the user, for display and, once submitting is wired up, PR attribution.
+  // Identify the user, for display and for finding their copy of the docs.
   const userRes = await fetch('https://api.github.com/user', {
     headers: {
       Authorization: `Bearer ${tokenData.access_token}`,
@@ -76,7 +77,6 @@ export async function onRequestGet({ request, env }: Ctx): Promise<Response> {
   const sessionCookie = await writeSession(env, {
     // Token stays encrypted + server-side; never sent to the browser.
     token: tokenData.access_token,
-    refreshToken: tokenData.refresh_token || null,
     // GitHub Apps with expiring tokens include expires_in (seconds).
     tokenExpiresAt: tokenData.expires_in
       ? Date.now() + tokenData.expires_in * 1000

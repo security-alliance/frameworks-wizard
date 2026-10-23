@@ -19,7 +19,6 @@ const SESSION_TTL = 60 * 60 * 8 // 8 hours
  */
 export interface Session {
   token: string
-  refreshToken: string | null
   /** Epoch ms, for GitHub Apps with expiring tokens. */
   tokenExpiresAt: number | null
   login: string
@@ -44,6 +43,13 @@ export async function readSession(env: Env, request: Request): Promise<Session |
   if (!data) return null
   if (data.iat && Date.now() - data.iat > SESSION_TTL * 1000) return null
   return data
+}
+
+// Whether the GitHub token still has a minute left. The session and the token
+// both last 8 hours, but the token's clock starts first, so a session can
+// outlive it by the few seconds sign-in took.
+export function tokenUsable(session: Session): boolean {
+  return session.tokenExpiresAt == null || session.tokenExpiresAt - Date.now() > 60_000
 }
 
 export function clearSession(): string {

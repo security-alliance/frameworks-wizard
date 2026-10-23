@@ -89,29 +89,6 @@ export function Card({
   )
 }
 
-// A placeholder for a step that isn't built yet, so the full journey is
-// navigable without faking write access.
-export function StepPlaceholder({
-  title,
-  children,
-}: {
-  title: string
-  children: ReactNode
-}) {
-  return (
-    <Card className="mx-auto max-w-xl px-8 py-10 text-center">
-      <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-full bg-brand-soft text-brand-hover">
-        <LockIcon />
-      </div>
-      <h2 className="text-xl font-semibold text-fw-strong">{title}</h2>
-      <span className="mt-2 inline-block rounded-full border border-fw-border px-2.5 py-0.5 text-xs font-medium text-fw-faint">
-        Not available yet
-      </span>
-      <div className="mt-4 text-sm leading-relaxed text-fw-muted">{children}</div>
-    </Card>
-  )
-}
-
 /* ---- inline icons (no icon dependency) ---- */
 
 export type IconProps = SVGProps<SVGSVGElement>
@@ -127,7 +104,7 @@ const ico = {
   strokeLinejoin: 'round',
 } as const
 
-// The larger icons used on the landing page and the placeholder steps.
+// The larger icons used on the landing page and the step cards.
 const big = { ...ico, width: 22, height: 22 } as const
 
 export const SearchIcon = (p: IconProps) => (
@@ -238,11 +215,6 @@ export const BranchIcon = (p: IconProps) => (
 export const CheckIcon = (p: IconProps) => (
   <svg {...ico} width="16" height="16" strokeWidth="3" {...p}>
     <path d="M20 6L9 17l-5-5" />
-  </svg>
-)
-export const LockIcon = (p: IconProps) => (
-  <svg {...big} {...p}>
-    <rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
   </svg>
 )
 export const ArrowRight = (p: IconProps) => (

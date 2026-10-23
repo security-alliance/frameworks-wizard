@@ -14,7 +14,7 @@
 // recognise becomes a read-only `raw` block rather than something the editor
 // might rewrite.
 
-import { sameContent } from './markdown.js'
+import { keepUntouched, sameContent } from './markdown.js'
 import type { Block, BlockKind, Checklist, ChecklistItem } from './types.js'
 
 export type { Block, BlockKind, Checklist, ChecklistItem } from './types.js'
@@ -185,13 +185,17 @@ export function joinBlocks(blocks: Block[]): string {
  *     immediately re-register themselves as edits.
  *   - A contributor who types a word and deletes it again is back to no change,
  *     and the block goes back to emitting its original bytes.
+ *
+ * The same holds inside a block that did change: its untouched paragraphs keep
+ * their original bytes (see `keepUntouched`), so the pull request shows what
+ * the contributor wrote and nothing the editor merely re-wrapped.
  */
 export function updateBlock(blocks: Block[], id: string, text: string): Block[] {
   return blocks.map((b) => {
     if (b.id !== id) return b
     const next = text.replace(/\s+$/, '')
     if (sameContent(next, b.raw)) return { ...b, text: b.pristine, edited: false }
-    return { ...b, text: next, edited: true }
+    return { ...b, text: keepUntouched(b.pristine, next), edited: true }
   })
 }
 

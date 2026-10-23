@@ -7,6 +7,7 @@ import {
 } from './lib/github.js'
 import { parseFrontmatter } from './lib/frontmatter.js'
 import { splitBlocks, updateBlock, isDirty } from './lib/blocks.js'
+import { wrapWidth } from './lib/markdown.js'
 import { annotateBlocks } from './lib/inlineDiff.js'
 import {
   readDraft,
@@ -16,6 +17,8 @@ import {
   listDrafts,
 } from './lib/drafts.js'
 import type { DraftSummary } from './lib/drafts.js'
+import { lastSent, rememberSent } from './lib/send.js'
+import type { Sent } from './lib/send.js'
 import { useAuth } from './lib/useAuth.js'
 import { useTheme } from './lib/useTheme.js'
 import { useWizardRoute } from './lib/useWizardRoute.js'
@@ -32,7 +35,7 @@ import EditStep from './steps/EditStep.js'
 import ReviewStep from './steps/ReviewStep.js'
 import { ConnectStep } from './steps/ConnectStep.js'
 import SubmitStep from './steps/SubmitStep.js'
-import { DoneStep } from './steps/GatedSteps.js'
+import DoneStep from './steps/DoneStep.js'
 import type { PrAnswers } from './lib/prTemplate.js'
 import type {
   Block,
@@ -46,7 +49,7 @@ const DEFAULT_PAGE = 'docs/pages/ai-security/overview.mdx'
 
 export default function App() {
   // Step and page live in the URL, so a reload stays where you were.
-  const { step: stepIdx, path, chosen, authError, goToStep, goToPage } =
+  const { step: stepIdx, path, chosen, authError, justInstalled, goToStep, goToPage } =
     useWizardRoute(DEFAULT_PAGE)
   const [maxReached, setMaxReached] = useState(stepIdx)
 
@@ -78,10 +81,16 @@ export default function App() {
 
   // The page, as editable blocks. `originalBody` is kept for the technical diff;
   // the blocks themselves carry each section's original bytes, so an untouched
-  // section always round-trips exactly.
+  // section always round-trips exactly. `originalRaw` is the whole file as it
+  // loaded, frontmatter and all: Send hands it to the backend as the version
+  // the edit starts from.
   const [fm, setFm] = useState<Frontmatter>({}) // parsed frontmatter, for preview components
   const [blocks, setBlocks] = useState<Block[]>([])
   const [originalBody, setOriginalBody] = useState('')
+  const [originalRaw, setOriginalRaw] = useState('')
+
+  // The suggestion just sent, for the Done step.
+  const [sent, setSent] = useState<Sent | null>(() => lastSent())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -123,6 +132,7 @@ export default function App() {
         const { frontmatter: fmRaw, body } = splitFrontmatter(raw)
         setFm(parseFrontmatter(fmRaw))
         setOriginalBody(body)
+        setOriginalRaw(raw)
 
         // Rebuilt from the repo's copy, then the draft laid back over it —
         // never from the drafted text alone, or every section would arrive
@@ -140,7 +150,9 @@ export default function App() {
         // The note describes *this* page's changes, so it arrives and leaves
         // with them. Carrying the last page's note across a switch would put a
         // sentence about the page they left in front of the one they opened.
+        // The Send step's ticks are about this page's changes too.
         setNote(draft?.note ?? '')
+        setAnswers(draft?.answers ?? {})
         setLoading(false)
       })
       .catch((e: Error) => {
@@ -154,6 +166,9 @@ export default function App() {
   }, [path])
 
   const dirty = useMemo(() => isDirty(blocks), [blocks])
+  // Measured once per page: what width the page is wrapped at, so an edited
+  // paragraph is re-wrapped the way the rest of the page already is.
+  const wrap = useMemo(() => wrapWidth(originalBody), [originalBody])
   // The annotated page and the count of changed sections. Computed once here
   // because Review renders it and Submit reports it.
   const annotated = useMemo(() => annotateBlocks(blocks), [blocks])
@@ -216,6 +231,7 @@ export default function App() {
         : note.trim()
           ? 'ready to send'
           : 'needs a note',
+      done: sent ? `#${sent.number} sent` : undefined,
     }
   }, [
     auth.status,
@@ -226,6 +242,7 @@ export default function App() {
     dirty,
     note,
     annotated.changedBlocks,
+    sent,
   ])
 
   function pickFramework(fw: string) {
@@ -245,6 +262,7 @@ export default function App() {
     clearDraft(path)
     setRestored(null)
     setNote('')
+    setAnswers({})
     setDrafts(listDrafts())
   }
 
@@ -254,8 +272,19 @@ export default function App() {
       setBlocks(splitBlocks(originalBody))
       setRestored(null)
       setNote('')
+      setAnswers({})
     }
     setDrafts(listDrafts())
+  }
+
+  // Once it's sent, the change lives in the pull request, and the draft has
+  // done its job. Clearing it is what stops the drafts menu offering to send
+  // the same thing twice.
+  function finishSend(result: Sent) {
+    resetEdits()
+    setSent(result)
+    rememberSent(result)
+    goTo(stepIndex('done'))
   }
 
   // Opening a draft means the page *and* the step it belongs to — landing on
@@ -299,11 +328,11 @@ export default function App() {
     // and saving now would replace the draft with "no edits" and delete it.
     if (restored && restored.applied === 0 && restored.skipped > 0) return
     const t = setTimeout(() => {
-      setPersisted(saveDraft(path, blocks, note))
+      setPersisted(saveDraft(path, blocks, note, answers))
       setDrafts(listDrafts())
     }, 700)
     return () => clearTimeout(t)
-  }, [blocks, note, loading, error, restored, path])
+  }, [blocks, note, answers, loading, error, restored, path])
 
   // On the way out, save the last word synchronously — `localStorage` writes
   // block, so the debounce above can't swallow it.
@@ -315,7 +344,7 @@ export default function App() {
   useEffect(() => {
     if (!dirty) return
     const save = () => {
-      setPersisted(saveDraft(path, blocks, note))
+      setPersisted(saveDraft(path, blocks, note, answers))
     }
     const warn = (e: BeforeUnloadEvent) => {
       save()
@@ -327,7 +356,7 @@ export default function App() {
       window.removeEventListener('beforeunload', warn)
       window.removeEventListener('pagehide', save)
     }
-  }, [dirty, path, blocks, note, persisted])
+  }, [dirty, path, blocks, note, answers, persisted])
 
   return (
     <div className="fw-app-bg min-h-full">
@@ -375,6 +404,7 @@ export default function App() {
               loading={loading}
               error={error}
               blocks={blocks}
+              wrap={wrap}
               onChangeBlock={changeBlock}
               dirty={dirty}
               onReset={resetEdits}
@@ -398,12 +428,15 @@ export default function App() {
           )}
           {step.id === 'submit' && (
             <SubmitStep
+              path={path}
               current={current}
               fm={fm}
               contributorData={contributors}
-              user={auth.user}
+              auth={auth}
+              justInstalled={justInstalled}
               blocks={blocks}
               originalBody={originalBody}
+              originalRaw={originalRaw}
               changedBlocks={annotated.changedBlocks}
               dirty={dirty}
               note={note}
@@ -411,13 +444,17 @@ export default function App() {
               answers={answers}
               onAnswer={(id, on) => setAnswers((a) => ({ ...a, [id]: on }))}
               onGoTo={(id) => goTo(stepIndex(id))}
+              onSent={finishSend}
             />
           )}
-          {step.id === 'done' && <DoneStep />}
+          {step.id === 'done' && (
+            <DoneStep sent={sent} onGoTo={(id) => goTo(stepIndex(id))} />
+          )}
         </main>
 
-        {/* Nav controls (Welcome has its own CTA; last step has no "next";
-            focus mode folds them away — Exit focus brings them back) */}
+        {/* Nav controls (Welcome has its own CTA; Send's "next" is its own
+            Send button, and Done has none; focus mode folds them away — Exit
+            focus brings them back) */}
         {step.id !== 'welcome' && (
           <Collapse open={!focused}>
             <div className="mx-auto mt-8 flex max-w-4xl items-center justify-between">
@@ -429,11 +466,11 @@ export default function App() {
                 Step {stepIdx + 1} of {STEPS.length}
               </span>
 
-              {isLast ? (
+              {isLast || step.id === 'submit' ? (
                 <span className="w-23" /> // spacer to keep "Back" left-aligned
               ) : (
-                <Button onClick={next} variant={step.gated ? 'outline' : 'primary'}>
-                  {step.gated ? 'Skip for now' : 'Continue'} <ArrowRight />
+                <Button onClick={next}>
+                  Continue <ArrowRight />
                 </Button>
               )}
             </div>

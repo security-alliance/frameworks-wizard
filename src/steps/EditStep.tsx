@@ -28,6 +28,7 @@ export default function EditStep({
   loading,
   error,
   blocks,
+  wrap,
   onChangeBlock,
   dirty,
   onReset,
@@ -42,6 +43,8 @@ export default function EditStep({
   loading: boolean
   error: string | null
   blocks: Block[]
+  /** The page's hard-wrap width, from `wrapWidth`. */
+  wrap: number
   onChangeBlock: (id: string, text: string) => void
   dirty: boolean
   onReset: () => void
@@ -161,6 +164,7 @@ export default function EditStep({
         ) : (
           <BlockEditor
             blocks={blocks}
+            wrap={wrap}
             onChangeBlock={onChangeBlock}
             focus={focus}
             onFocusEditor={setActiveEditor}

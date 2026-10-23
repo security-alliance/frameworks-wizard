@@ -36,6 +36,9 @@ export interface WizardRoute extends Route {
   /** Set when GitHub's callback reported a failed sign-in. Read once, at
    *  startup, before the parameter is stripped from the address. */
   authError: string | null
+  /** True when GitHub has just sent the contributor back from installing the
+   *  app on their copy. Read once, like `authError`. */
+  justInstalled: boolean
   goToStep: (step: number) => void
   goToPage: (path: string) => void
 }
@@ -55,15 +58,56 @@ function parseHash(hash: string): { step: number | null; path: string | null } {
   }
 }
 
-// Params GitHub's callback sends us. They report the outcome of one sign-in
-// attempt and mean nothing afterwards, so they're read once at startup and then
-// dropped from the address — see `stripOAuthParams`.
-const OAUTH_PARAMS = ['connected', 'auth_error']
+// Params GitHub sends us back with: our sign-in callback's, and the app
+// install's (GitHub appends those to the app's Setup URL). They report the
+// outcome of one trip and mean nothing afterwards, so they're read once at
+// startup and then dropped from the address — see `stripReturnParams`.
+const RETURN_PARAMS = ['connected', 'auth_error', 'setup_action', 'installation_id']
+
+// Where to come back to after a trip to GitHub that started somewhere other
+// than the Sign in step: signing in again from Send, or giving the app access
+// to the contributor's copy. GitHub sends them back to a fixed address, and
+// landing on the welcome screen with their page gone would undo the very
+// thing the trip was for.
+//
+// sessionStorage, because it's this tab's journey, and stamped, so a trip
+// abandoned halfway doesn't steer an unrelated sign-in much later.
+const RETURN_KEY = 'fw-return'
+const RETURN_TTL_MS = 60 * 60 * 1000
+
+/** Call just before sending the contributor off to GitHub. */
+export function rememberReturn(): void {
+  try {
+    sessionStorage.setItem(
+      RETURN_KEY,
+      JSON.stringify({ hash: window.location.hash, at: Date.now() }),
+    )
+  } catch {
+    /* they land on the welcome screen instead, with their draft still saved */
+  }
+}
+
+function takeReturn(): string | null {
+  try {
+    const raw = sessionStorage.getItem(RETURN_KEY)
+    sessionStorage.removeItem(RETURN_KEY)
+    const saved = raw ? (JSON.parse(raw) as { hash: string; at: number }) : null
+    return saved && Date.now() - saved.at < RETURN_TTL_MS ? saved.hash : null
+  } catch {
+    return null
+  }
+}
+
+// Taken once per page load, here rather than in the hook, because StrictMode
+// runs state initialisers twice and the second run would find it gone.
+const landing = new URLSearchParams(window.location.search)
+const BACK_TO =
+  landing.has('connected') || landing.has('setup_action') ? takeReturn() : null
 
 // The landing page keeps a bare address — there's nothing yet to point at — and
 // only the steps that are about a chosen page carry `?page=`.
 function formatUrl(step: number, path: string): string {
-  const base = window.location.pathname + stripOAuthParams(window.location.search)
+  const base = window.location.pathname + stripReturnParams(window.location.search)
   const s = STEPS[step]
   if (s.id === 'welcome') return base
   const route = s.page ? toRoute(path) : null
@@ -74,9 +118,9 @@ function formatUrl(step: number, path: string): string {
 // would stick: stepping back to Welcome would keep it, and reloading there
 // would read it again and bounce the contributor to the sign-in step they had
 // just left.
-function stripOAuthParams(search: string): string {
+function stripReturnParams(search: string): string {
   const q = new URLSearchParams(search)
-  for (const p of OAUTH_PARAMS) q.delete(p)
+  for (const p of RETURN_PARAMS) q.delete(p)
   const rest = q.toString()
   return rest ? `?${rest}` : ''
 }
@@ -87,25 +131,24 @@ function stripOAuthParams(search: string): string {
 export function useWizardRoute(defaultPath: string): WizardRoute {
   // Read once, at startup, before the first `replaceState` clears it from the
   // address. Held in state so the Connect step can still show what happened.
-  const [authError] = useState<string | null>(
-    () => new URLSearchParams(window.location.search).get('auth_error'),
-  )
+  const [authError] = useState<string | null>(() => landing.get('auth_error'))
+  const [justInstalled] = useState<boolean>(() => landing.has('setup_action'))
 
   // A page named in the address was either deep-linked or picked before a
   // reload. Either way it's the contributor's, not ours.
   const [chosen, setChosen] = useState<boolean>(
-    () => parseHash(window.location.hash).path !== null,
+    () => parseHash(BACK_TO ?? window.location.hash).path !== null,
   )
 
   const [route, setRoute] = useState<Route>(() => {
-    const fromHash = parseHash(window.location.hash)
-    // Returning from the GitHub OAuth redirect (?connected=1 / ?auth_error=…)
-    // should land on Connect, not wherever the hash last pointed, so the result
-    // of signing in is actually visible.
-    const q = new URLSearchParams(window.location.search)
-    const returning = OAUTH_PARAMS.some((p) => q.has(p))
+    const fromHash = parseHash(BACK_TO ?? window.location.hash)
+    // Back from a sign-in started on the Sign in step: land there, not wherever
+    // the hash last pointed, so the result of signing in is actually visible.
+    // A failed one always lands there, to show what went wrong.
+    const toConnect =
+      landing.has('auth_error') || (landing.has('connected') && BACK_TO === null)
     return {
-      step: returning ? stepIndex('connect') : (fromHash.step ?? 0),
+      step: toConnect ? stepIndex('connect') : (fromHash.step ?? 0),
       path: fromHash.path ?? defaultPath,
     }
   })
@@ -169,6 +212,7 @@ export function useWizardRoute(defaultPath: string): WizardRoute {
     path: route.path,
     chosen,
     authError,
+    justInstalled,
     goToStep,
     goToPage,
   }

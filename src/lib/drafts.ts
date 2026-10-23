@@ -1,4 +1,5 @@
 import { updateBlock } from './blocks.js'
+import type { PrAnswers } from './prTemplate.js'
 import type { Block } from './types.js'
 
 // Work in progress, kept in this browser.
@@ -50,6 +51,12 @@ export interface Draft {
    * else's page would be worse than no note at all.
    */
   note?: string
+  /**
+   * The Send step's ticks, for the same reason. They also have to survive
+   * signing in again and the one-time setup, which leave the wizard for GitHub
+   * and come back with a fresh page load.
+   */
+  answers?: PrAnswers
 }
 
 const key = (path: string) => `${PREFIX}${path}`
@@ -62,7 +69,12 @@ const editedBlocks = (blocks: Block[]) =>
  * Write the current edits for `path`, or clear the draft when there are none —
  * undoing every change should not leave a ghost to be offered back later.
  */
-export function saveDraft(path: string, blocks: Block[], note = ''): boolean {
+export function saveDraft(
+  path: string,
+  blocks: Block[],
+  note = '',
+  answers: PrAnswers = {},
+): boolean {
   const edits = editedBlocks(blocks).map((b) => ({
     line: b.startLine,
     was: b.pristine,
@@ -80,7 +92,7 @@ export function saveDraft(path: string, blocks: Block[], note = ''): boolean {
   try {
     localStorage.setItem(
       key(path),
-      JSON.stringify({ savedAt: Date.now(), edits, note } satisfies Draft),
+      JSON.stringify({ savedAt: Date.now(), edits, note, answers } satisfies Draft),
     )
     return true
   } catch {

@@ -10,18 +10,20 @@ import type {
 // The pull request the wizard opens, and the questions it asks to build it.
 //
 // The repo's PULL_REQUEST_TEMPLATE.md is written for someone opening a PR by
-// hand, and three of its six lines don't survive contact with this flow:
+// hand, and three of its "If applicable" lines don't survive contact with this
+// flow:
 //
-//   "tag current contributors from the attribution list" — the contributor
-//   can't tag anyone; the wizard opens the PR. And they have no way of knowing
-//   who is on the attribution list unless we show them. So we show them, by
-//   name and face, and the wizard does the tagging.
+//   "Editing existing content: tagged the current contributors from the
+//   attribution list" — the contributor can't tag anyone; the wizard opens the
+//   PR. And they have no way of knowing who is on the attribution list unless
+//   we show them. So we show them, by name and face, and the wizard does the
+//   tagging.
 //
-//   "if there is a steward for that framework, ask the steward" — nobody
-//   arriving here knows whether there is one, or what a steward is. But we can
-//   find out: stewards carry a `Framework-Steward` badge in contributors.json,
-//   and the badge names the framework. So we look one up and, if there is one,
-//   the review request goes to them by name.
+//   "Framework has a steward: asked them to review" — nobody arriving here
+//   knows whether there is one, or what a steward is. But we can find out:
+//   stewards carry a `Framework-Steward` badge in contributors.json, and the
+//   badge names the framework. So we look one up and, if there is one, the
+//   review request goes to them by name.
 //
 // Neither of those is a question, and a checkbox, even one ticked by default,
 // is the wrong shape for what's being asked:
@@ -40,13 +42,24 @@ import type {
 // mention line visible in the preview of the pull request itself. Transparency
 // instead of a toggle.
 //
-//   "if you're modifying the general outline, update vocs.config.ts with
-//   dev: true" — editing a page can't change which pages exist or how they're
-//   ordered. There is no version of this question that means anything here, so
-//   it isn't asked, and the PR says the outline is untouched.
+//   "Outline change: updated `vocs.config.ts` with the `dev: true` parameter"
+//   — editing a page can't change which pages exist or how they're ordered.
+//   There is no version of this question that means anything here, so it isn't
+//   asked, and the line is left out.
 //
-// What each choice maps to in the PR body is kept next to it, so the checklist
-// a maintainer reads still reads like every other one they get.
+// The body follows the template's own sections, in the template's words, so it
+// reads like every other pull request a maintainer gets. Only lines that apply
+// are listed: in a generated pull request, an unticked line says nothing.
+
+// People are only @mentioned on the real repo. A test copy carries the real
+// pages, and with them the real people's handles, so a mention there would
+// notify them about a test. Anywhere else the handle is written without the @,
+// which GitHub doesn't treat as a mention. Keyed on the repo itself rather than
+// a setting, so nobody can ping anyone by forgetting to set it.
+export const MENTIONS = REPO === 'security-alliance/frameworks'
+
+/** `@octocat` on the real repo, plain `octocat` everywhere else. */
+export const handle = (slug: string) => (MENTIONS ? `@${slug}` : slug)
 
 export const STEWARDSHIP_URL = 'https://frameworks.securityalliance.org/contribute/stewards'
 export const SPOTLIGHT_URL =
@@ -57,40 +70,28 @@ export const DISCORD_URL = 'https://discord.gg/securityalliance'
  * The asks from the PR template that are genuinely the contributor's to answer.
  *
  * Mentioning the page's credited contributors and the framework's steward is
- * not among them — see the note at the top of this file. What's left is the two
- * things nobody can be volunteered into and one thing only they can attest to.
+ * not among them — see the note at the top of this file. Nor is sharing the PR
+ * in Discord: that's a link on the Done step, once there is a PR to share.
+ * What's left is the one thing nobody can be volunteered into.
  */
 export interface PrAnswers {
   /** Volunteer for stewardship — only offered when the framework has none. */
   stewardInterest?: boolean
-  /** Share the PR in Discord to ask the wider community for feedback. */
-  discord?: boolean
-  /** "I've read my changes back." */
-  typos?: boolean
 }
 
-// The template's own sentences, for the checklist in the PR body.
-//
-// Exported because the Send step draws a preview of the pull request from the
-// same inputs `buildPrBody` uses. Two hand-written copies of these sentences
-// would be two things to keep in step, and the preview would quietly stop being
-// a preview the first time one of them was edited.
+// The template's own sentences (security-alliance/frameworks#535), for the
+// PR body. One section heading per template section.
+export const TEMPLATE_SECTIONS = {
+  change: 'What does this PR change?',
+  type: 'Type of change',
+  applicable: 'If applicable',
+}
+
 export const TEMPLATE_LINES = {
-  describe: 'Describe your changes, substitute this text with the information',
-  contributors:
-    'If you are touching an existing piece of content, tag current contributors from the attribution list',
-  steward: 'If there is a steward for that framework, ask the steward to review it',
-  // Ours, not the template's, and it stands in for `steward` rather than
-  // joining it. "If there is a steward, ask them" is an instruction with no
-  // subject when the framework hasn't got one: it can only ever sit there
-  // unticked, which reads as a step the contributor skipped rather than as one
-  // that didn't apply. This says what is actually true of the framework, and
-  // ticks for the only thing anyone could do about it.
-  stewardInterest:
-    'No steward looks after this framework yet, and the contributor has offered to take it on',
-  discord:
-    'If you need feedback for your content from the wider community, share the PR in our Discord',
-  typos: 'Review changes to ensure there are no typos; see instructions below.',
+  // The wizard only ever edits a page that exists.
+  type: 'Edit to existing content',
+  contributors: 'Editing existing content: tagged the current contributors from the attribution list',
+  steward: 'Framework has a steward: asked them to review',
 }
 
 /* ------------------------------------------------------------------ *
@@ -173,65 +174,98 @@ export interface PrBodyInput {
   stewards?: Person[]
 }
 
-export function buildPrBody({
+/** One line naming people: "Review requested from the ENS steward: @ghadi8". */
+export interface PeopleLine {
+  label: string
+  people: Person[]
+}
+
+/**
+ * The pull request's body, as parts. `buildPrBody` writes them out as markdown
+ * and the Send step's preview draws them, so the two can't disagree.
+ */
+export interface PrParts {
+  note: string
+  page?: { rel: string; url: string }
+  /** Who is asked to review, then who else is credited. Each person once. */
+  people: PeopleLine[]
+  /** The framework has no steward, and the contributor offered to be one. */
+  volunteer: boolean
+  /** The "If applicable" lines that apply. All ticked; the rest are left out. */
+  applicable: string[]
+  /** Said once, in italics, at the very end. */
+  footer: string
+}
+
+export function prParts({
   note,
   answers = {},
   current,
   contributors = [],
   stewards = [],
-}: PrBodyInput): string {
-  const tick = (on: boolean | undefined, line: string) => `- [${on ? 'x' : ' '}] ${line}`
-  const mention = (people: Person[]) => people.map((p) => `@${p.slug}`).join(' ')
-
-  const lines = [
-    '## Frameworks PR Checklist',
-    '',
-    'Thank you for contributing to the Security Frameworks! This pull request was opened through the contribution wizard, so the checklist below reflects what the contributor chose and what the wizard did on their behalf.',
-    '',
-    tick(true, TEMPLATE_LINES.describe),
-    '',
-    note.trim() || '_No note given._',
-    '',
-    tick(contributors.length > 0, TEMPLATE_LINES.contributors),
-    // One line or the other, never both — see TEMPLATE_LINES.stewardInterest.
-    stewards.length > 0
-      ? tick(true, TEMPLATE_LINES.steward)
-      : tick(answers.stewardInterest, TEMPLATE_LINES.stewardInterest),
-    tick(answers.discord, TEMPLATE_LINES.discord),
-    tick(answers.typos, TEMPLATE_LINES.typos),
-  ]
-
-  if (current) {
-    lines.push(
-      '',
-      `Page: [\`${current.rel}\`](https://github.com/${REPO}/blob/${BRANCH}/${current.path})`,
-    )
-  }
-
-  // Both mention lines are unconditional when there are people to mention: the
-  // Send step shows the contributor exactly who these are, and shows them this
-  // body, so nobody is pulled into a thread the contributor couldn't see coming.
-  if (contributors.length) {
-    lines.push('', `Credited on this page: ${mention(contributors)}`)
-  }
+}: PrBodyInput): PrParts {
+  // A steward who is also credited on the page is named once, as the steward:
+  // the review request is the line that asks something of them. The framework
+  // isn't named: the page line right above says which it is.
+  const stewardSlugs = new Set(stewards.map((p) => p.slug))
+  const others = contributors.filter((p) => !stewardSlugs.has(p.slug))
+  const people: PeopleLine[] = []
   if (stewards.length) {
-    lines.push('', `Review requested from the framework steward: ${mention(stewards)}`)
+    people.push({
+      label: `Review requested from the framework steward${stewards.length === 1 ? '' : 's'}`,
+      people: stewards,
+    })
   }
-  // A framework with nobody looking after it, and someone in front of us who
-  // just did the work. Per the stewardship page there's no application form —
-  // the path is contributing and saying so, which is exactly this.
-  if (answers.stewardInterest && stewards.length === 0 && current) {
+  if (others.length) {
+    people.push({
+      label: stewards.length ? 'Also credited on this page' : 'Credited on this page',
+      people: others,
+    })
+  }
+
+  return {
+    note: note.trim(),
+    page: current
+      ? { rel: current.rel, url: `https://github.com/${REPO}/blob/${BRANCH}/${current.path}` }
+      : undefined,
+    people,
+    // A framework with nobody looking after it, and someone in front of us who
+    // just did the work. Per the stewardship page there's no application form —
+    // the path is contributing and saying so, which is exactly this.
+    volunteer: !!answers.stewardInterest && stewards.length === 0,
+    applicable: [
+      contributors.length > 0 && TEMPLATE_LINES.contributors,
+      stewards.length > 0 && TEMPLATE_LINES.steward,
+    ].filter((line): line is string => !!line),
+    footer: MENTIONS
+      ? 'Sent with the Frameworks contribution wizard.'
+      : 'Sent with the Frameworks contribution wizard. On this test copy, names are written without @, so nobody is notified.',
+  }
+}
+
+// What the contributor wrote comes first, under the template's own heading,
+// with who's being asked right after it; then the checklist; then one line
+// saying where the pull request came from. That line stays the last
+// paragraph: the backend puts its conflict warning just above it.
+export function buildPrBody(input: PrBodyInput): string {
+  const p = prParts(input)
+  const mention = (people: Person[]) => people.map((x) => handle(x.slug)).join(' ')
+
+  const lines = [`### ${TEMPLATE_SECTIONS.change}`, '', p.note || '_No note given._', '']
+  if (p.page) lines.push(`- **Page:** [\`${p.page.rel}\`](${p.page.url})`)
+  for (const line of p.people) lines.push(`- **${line.label}:** ${mention(line.people)}`)
+  if (p.volunteer) {
     lines.push(
       '',
-      `**${titleize(current.framework)} has no steward.** The contributor has expressed interest in taking it on. See [Stewardship](${STEWARDSHIP_URL}).`,
+      `**This framework has no steward yet.** The contributor has offered to take it on. See [Stewardship](${STEWARDSHIP_URL}).`,
     )
   }
 
-  lines.push(
-    '',
-    '---',
-    '',
-    'The wizard edits pages that already exist, so the outline in `vocs.config.ts` is untouched.',
-  )
+  lines.push('', `### ${TEMPLATE_SECTIONS.type}`, '', `- [x] ${TEMPLATE_LINES.type}`)
+  if (p.applicable.length) {
+    lines.push('', `### ${TEMPLATE_SECTIONS.applicable}`, '', ...p.applicable.map((l) => `- [x] ${l}`))
+  }
+
+  lines.push('', `_${p.footer}_`)
   return lines.join('\n')
 }

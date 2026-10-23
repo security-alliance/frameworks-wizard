@@ -1,6 +1,7 @@
 // Cloudflare Worker config. `wrangler deploy` uploads the frontend in dist/ and
-// the auth code in functions/, and creates the routes below. The routes only
-// claim /wizard on the docs domain; every other path stays with the docs site.
+// the sign-in and sending code in functions/, and creates the routes below. The
+// routes only claim /wizard on the docs domain; every other path stays with the
+// docs site.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "frameworks-wizard",
@@ -17,5 +18,11 @@
     // Requests for the API skip the file lookup and go straight to the code.
     "run_worker_first": ["/wizard/api/*"]
   },
-  "observability": { "enabled": true }
+  "observability": { "enabled": true },
+  "vars": {
+    // Where pages are read from and suggestions are sent to.
+    "UPSTREAM_REPO": "security-alliance/frameworks",
+    // The GitHub App's name in its public URL, github.com/apps/<slug>.
+    "APP_SLUG": "frameworks-contribution-wizard"
+  }
 }

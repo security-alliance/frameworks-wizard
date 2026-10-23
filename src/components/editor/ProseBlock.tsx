@@ -24,10 +24,13 @@ type MarkdownEditor = Editor & {
 // editing.
 export default function ProseBlock({
   block,
+  wrap,
   onChange,
   onFocusEditor,
 }: {
   block: Block
+  /** The page's hard-wrap width, from `wrapWidth`. */
+  wrap: number
   onChange: (id: string, text: string) => void
   onFocusEditor: (editor: Editor) => void
 }) {
@@ -55,7 +58,7 @@ export default function ProseBlock({
         if (!guard.current || !editor.isFocused) return
         onChange(
           block.id,
-          toSourceMarkdown((editor as MarkdownEditor).storage.markdown.getMarkdown()),
+          toSourceMarkdown((editor as MarkdownEditor).storage.markdown.getMarkdown(), wrap),
         )
       },
       onFocus({ editor }) {
