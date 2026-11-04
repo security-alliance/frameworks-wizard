@@ -136,7 +136,7 @@ export default function App() {
 
         // Rebuilt from the repo's copy, then the draft laid back over it —
         // never from the drafted text alone, or every section would arrive
-        // with its own edit as its "original" and the diff would be empty.
+        // with its own edit as its "original" and the diff would be empty. 
         const fresh = splitBlocks(body)
         const draft = readDraft(path)
         if (draft) {
