@@ -110,7 +110,6 @@ export default function SubmitStep({
   if (!dirty) {
     return (
       <div className="mx-auto max-w-3xl">
-        <WipBanner />
         <Card className="px-8 py-10 text-center">
           <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-full bg-fw-surface-2 text-fw-faint">
             <PencilIcon />
@@ -138,8 +137,6 @@ export default function SubmitStep({
   // felt like a leap of faith.
   return (
     <div className="mx-auto max-w-3xl">
-      <WipBanner />
-
       <Card className="p-0">
         <div className="border-b border-fw-border px-6 py-4">
           <h2 className="text-lg font-semibold text-fw-strong">Send your suggestion</h2>
@@ -291,27 +288,6 @@ function PreviewFold({
       </summary>
       <div className="px-3 pb-3">{children}</div>
     </details>
-  )
-}
-
-// Said once, at the top, before anyone forms an opinion about the layout: this
-// screen is still being built. Cheaper than fielding the same question from
-// every colleague who opens it.
-function WipBanner() {
-  return (
-    <div className="mb-4 flex gap-2.5 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3">
-      <span aria-hidden className="mt-px shrink-0 text-amber-500">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-          <path d="M12 9v4M12 17h.01" />
-          <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
-        </svg>
-      </span>
-      <p className="text-[13px] leading-relaxed text-fw-muted">
-        <span className="font-semibold text-amber-500">Work in progress.</span>{' '}
-        This step isn&apos;t final.
-        The layout and the wording could still change.
-      </p>
-    </div>
   )
 }
 
