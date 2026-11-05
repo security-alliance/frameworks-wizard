@@ -1,17 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
 import type { Editor } from '@tiptap/react'
-import { proseExtensions } from '../../lib/tiptapConfig.js'
-import { toSourceMarkdown, sameContent } from '../../lib/markdown.js'
+import { editorMarkdown, proseExtensions } from '../../lib/tiptapConfig.js'
+import {
+  commonIndent,
+  dedent,
+  mdxIndents,
+  reindent,
+  sameContent,
+  toSourceMarkdown,
+} from '../../lib/markdown.js'
 import type { Block } from '../../lib/types.js'
 import { LockSmallIcon } from '../ui.js'
-
-// `tiptap-markdown` hangs its serializer off `editor.storage`, which the core
-// types leave open-ended. Naming the one piece we use keeps the two call sites
-// below honest without pulling in an ambient module declaration.
-type MarkdownEditor = Editor & {
-  storage: { markdown: { getMarkdown: () => string } }
-}
 
 // One section of the page, edited as rich text — no markdown syntax visible.
 //
@@ -37,15 +37,19 @@ export default function ProseBlock({
   const [safe, setSafe] = useState<boolean | null>(null) // null = still checking
   const [showSource, setShowSource] = useState(false)
   const guard = useRef(false)
+  // Text inside a component can be indented as a whole, which MDX ignores but
+  // the editor would read as a code block. It edits the text without that
+  // indent, and every line it writes gets the indent back, so the section keeps
+  // the shape it had in the page.
+  const indent = block.inside ? commonIndent(block.text) : ''
 
   const editor = useEditor(
     {
       extensions: proseExtensions,
-      content: block.text,
+      content: mdxIndents(dedent(block.text, indent)),
       editable: true,
       onCreate({ editor }) {
-        const back = (editor as MarkdownEditor).storage.markdown.getMarkdown()
-        setSafe(sameContent(back, block.text))
+        setSafe(sameContent(editorMarkdown(editor), dedent(block.text, indent)))
         guard.current = true
       },
       onUpdate({ editor }) {
@@ -56,10 +60,8 @@ export default function ProseBlock({
         // mounted. `updateBlock` re-checks the content too, but a serialization
         // that nobody asked for shouldn't get that far.
         if (!guard.current || !editor.isFocused) return
-        onChange(
-          block.id,
-          toSourceMarkdown((editor as MarkdownEditor).storage.markdown.getMarkdown(), wrap),
-        )
+        const md = editorMarkdown(editor)
+        onChange(block.id, reindent(toSourceMarkdown(md, wrap - indent.length), indent))
       },
       onFocus({ editor }) {
         onFocusEditor(editor)

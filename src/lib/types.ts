@@ -12,13 +12,26 @@
 /**
  * What a block of a page is.
  *
- * `spacer` is blank lines in the source: it exists so the page rejoins
- * byte-for-byte, and renders as nothing. Keeping the kinds as a union rather
- * than loose strings is what makes every `switch` over them exhaustive — adding
- * a seventh kind is then a compile error at each place that has to handle it,
+ * `spacer` is blank lines in the source (and `<br />` spacing): it exists so the
+ * page rejoins byte-for-byte, and renders as nothing. `comment` is an MDX
+ * comment, `{/* … *\/}`, on lines of its own: invisible on the site, so hidden
+ * here too and kept exactly as written. `frameOpen` and
+ * `frameClose` are the tags of a component that wraps ordinary text, like
+ * `<Checklist>` or `<details>`: the tags stay exactly as written, and the text
+ * between them is split into blocks of its own. Keeping the kinds as a union
+ * rather than loose strings is what makes every `switch` over them exhaustive —
+ * adding a kind is then a compile error at each place that has to handle it,
  * instead of a silent fall-through to the read-only branch.
  */
-export type BlockKind = 'prose' | 'title' | 'managed' | 'checklist' | 'raw' | 'spacer'
+export type BlockKind =
+  | 'prose'
+  | 'title'
+  | 'managed'
+  | 'frameOpen'
+  | 'frameClose'
+  | 'raw'
+  | 'spacer'
+  | 'comment'
 
 /**
  * One editable section of a page.
@@ -46,19 +59,10 @@ export interface Block {
   /** The blank lines that followed the block. */
   trail: string
   edited: boolean
-}
-
-/** A checklist block taken apart into items, with its JSX tags preserved. */
-export interface Checklist {
-  id: string
-  items: ChecklistItem[]
-  openTag: string
-  closeTag: string
-}
-
-export interface ChecklistItem {
-  checked: boolean
-  text: string
+  /** On `frameOpen` and `frameClose`: the wrapping component, `Checklist`. */
+  frame?: string
+  /** On blocks inside a frame: the innermost wrapping component. */
+  inside?: string
 }
 
 /* ------------------------------------------------------------------ *

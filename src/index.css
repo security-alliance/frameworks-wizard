@@ -396,3 +396,80 @@ body {
   pointer-events: none;
   color: var(--fw-faint);
 }
+
+/* Checklists: the box beside the item's text, which wraps under the text and
+   not under the box. The boxes are disabled (see tiptapConfig.ts); full
+   opacity keeps them reading as the page's checkboxes, not as greyed out.
+   `:is(ul, ol)` covers numbered checklists too. */
+.fw-editor :is(ul, ol)[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0.25rem;
+}
+/* What sits under an item (sub-items, or a note like "This ensures all
+   moderators…") hangs right under that item's text, with no more space above it
+   than between two items. A normal list's margins read as the checklist ending
+   and a new one starting. */
+.fw-editor :is(ul, ol)[data-type="taskList"] > li > div > :is(ul, ol) {
+  margin: 0.3rem 0 0;
+}
+.fw-editor :is(ul, ol)[data-type="taskList"] > li > div > :is(ul, ol)[data-type="taskList"] {
+  padding-left: 0;
+}
+.fw-editor :is(ul, ol)[data-type="taskList"] > li > div > :is(ul, ol):not([data-type]) {
+  padding-left: 1.1rem;
+}
+.fw-editor :is(ul, ol)[data-type="taskList"] > li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+}
+/* Exactly one line of text tall, with the box centred in it, so the box lines
+   up with the item's first line whatever the font size. */
+.fw-editor :is(ul, ol)[data-type="taskList"] > li > label {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 15px;
+  height: 1.75em;
+  user-select: none;
+}
+.fw-editor :is(ul, ol)[data-type="taskList"] > li > label input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  opacity: 1;
+  accent-color: var(--fw-brand);
+  cursor: default;
+}
+/* An item with no box (a group heading or a note inside a checklist) gets a
+   bullet in the box's place, as on the live page. */
+.fw-editor :is(ul, ol)[data-type="taskList"] > li[data-plain] > label input {
+  display: none;
+}
+.fw-editor :is(ul, ol)[data-type="taskList"] > li[data-plain] > label::before {
+  content: "•";
+  color: var(--fw-muted);
+}
+/* Numbered checklists: `display: flex` drops the browser's own list numbers,
+   so they're counted here, ahead of the box. */
+.fw-editor ol[data-type="taskList"] {
+  counter-reset: fw-step;
+}
+.fw-editor ol[data-type="taskList"] > li {
+  counter-increment: fw-step;
+}
+.fw-editor ol[data-type="taskList"] > li::before {
+  content: counter(fw-step) ".";
+  flex: none;
+  min-width: 1.2rem;
+  line-height: 1.75em;
+  color: var(--fw-muted);
+}
+.fw-editor :is(ul, ol)[data-type="taskList"] > li > div {
+  flex: 1;
+  min-width: 0;
+}
+.fw-editor :is(ul, ol)[data-type="taskList"] li p {
+  margin: 0;
+}

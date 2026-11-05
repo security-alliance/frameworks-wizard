@@ -15,9 +15,9 @@
 // might rewrite.
 
 import { keepUntouched, sameContent } from './markdown.js'
-import type { Block, BlockKind, Checklist, ChecklistItem } from './types.js'
+import type { Block, BlockKind } from './types.js'
 
-export type { Block, BlockKind, Checklist, ChecklistItem } from './types.js'
+export type { Block, BlockKind } from './types.js'
 
 // Boilerplate every page carries. Contributors must never edit these — the
 // tags and credits are generated from frontmatter.
@@ -30,11 +30,34 @@ const MANAGED_LABELS: Record<string, string> = {
   ContributeFooter: 'Contribute footer',
 }
 
+// Components that wrap ordinary text. Their tags are kept exactly as written,
+// and the text between them is split and edited like the rest of the page, with
+// the same safety check. Locking the whole component, as the editor first did,
+// locked a third of the docs' checklists and every FAQ answer, which is the
+// text people most often want to change. The value is what the frame is called
+// on screen.
+export const FRAME_LABELS: Record<string, string> = {
+  Checklist: 'Checklist',
+  details: 'Collapsible section · opens on click',
+  GovernanceChecklistItem: 'Governance checklist item',
+  DevOnly: 'Draft-only section · not on the live site yet',
+}
+
 const FENCE_RE = /^\s*(`{3,}|~{3,})/
 const HEADING_RE = /^\s{0,3}(#{1,6})\s+/
-const IMPORT_RE = /^import\s/
+// A real MDX import, `import { X } from "…"` or `import "…"`, and not a sentence
+// that happens to wrap onto a line starting with the word "import" ("import or
+// use it. This is the primary…"), which was cut out of its paragraph and locked
+// as page setup.
+const IMPORT_RE =
+  /^import\s+(?:type\s+)?(?:[\w$]+\s*,?\s*)?(?:\{[^}]*\}|\*\s+as\s+[\w$]+)?\s*(?:from\s*)?["']/
 const TAG_OPEN_RE = /^\s{0,3}<([A-Za-z][\w.-]*)/
-const TASK_ITEM_RE = /^\s*[-*+]\s+\[( |x|X)\]\s?(.*)$/
+// `<br />` on a line of its own is spacing, not content: nothing to edit, and a
+// lock pill for each one only cluttered the pages that use them.
+const BR_LINE_RE = /^\s*<br\s*\/?>\s*$/
+const SUMMARY_LINE_RE = /^\s*<summary>(.*)<\/summary>\s*$/
+const COMMENT_START_RE = /^\s*\{\/\*/
+const COMMENT_END_RE = /\*\/\}\s*$/
 
 let uid = 0
 const nextId = () => `b${++uid}`
@@ -44,13 +67,29 @@ const nextId = () => `b${++uid}`
  * @returns blocks covering every line of `body`
  */
 export function splitBlocks(body: string): Block[] {
-  const lines = body.split('\n')
   const blocks: Block[] = []
+  splitLines(body.split('\n'), 0, undefined, blocks, { seenTitle: false })
+  return blocks
+}
+
+/**
+ * Split `lines` into `blocks`. `base` is the page line `lines[0]` sits on, and
+ * `inside` the component they're wrapped in, if any; a frame's text goes
+ * through here again, so frames nest.
+ */
+function splitLines(
+  lines: string[],
+  base: number,
+  inside: string | undefined,
+  blocks: Block[],
+  state: { seenTitle: boolean },
+): void {
+  const push = (kind: BlockKind, slice: string[], at: number, frame?: string) =>
+    blocks.push(makeBlock(kind, slice, base + at, inside, frame))
 
   let i = 0
   let prose: string[] = [] // buffered prose lines awaiting a flush
   let proseStart = 0
-  let seenTitle = false
 
   // Blank lines between sections are their own `spacer` block rather than part
   // of the prose that follows. They carry no content, so the editor renders
@@ -62,10 +101,8 @@ export function splitBlocks(body: string): Block[] {
     if (prose.length === 0) return
     let lead = 0
     while (lead < prose.length && prose[lead].trim() === '') lead++
-    if (lead > 0) blocks.push(makeBlock('spacer', prose.slice(0, lead), proseStart))
-    if (lead < prose.length) {
-      blocks.push(makeBlock('prose', prose.slice(lead), proseStart + lead))
-    }
+    if (lead > 0) push('spacer', prose.slice(0, lead), proseStart)
+    if (lead < prose.length) push('prose', prose.slice(lead), proseStart + lead)
     prose = []
   }
 
@@ -103,17 +140,17 @@ export function splitBlocks(body: string): Block[] {
     if (IMPORT_RE.test(line)) {
       flushProse()
       const { end } = scanManagedRun(lines, i)
-      blocks.push(makeBlock('managed', lines.slice(i, end), i))
+      push('managed', lines.slice(i, end), i)
       i = end
       continue
     }
 
     // --- The page title: one H1, editable as plain text. ---
     const heading = line.match(HEADING_RE)
-    if (heading && heading[1].length === 1 && !seenTitle) {
+    if (heading && heading[1].length === 1 && !state.seenTitle) {
       flushProse()
-      seenTitle = true
-      blocks.push(makeBlock('title', [line], i))
+      state.seenTitle = true
+      push('title', [line], i)
       i++
       continue
     }
@@ -129,6 +166,27 @@ export function splitBlocks(body: string): Block[] {
       continue
     }
 
+    // --- An MDX comment on lines of its own (`{/* separator */}`). It never
+    // shows on the site, and in the editor it read as text a contributor could
+    // edit or delete, so it's set aside, untouched and out of sight. ---
+    if (COMMENT_START_RE.test(line)) {
+      let end = i
+      while (end < lines.length && !lines[end].includes('*/}')) end++
+      if (end < lines.length && COMMENT_END_RE.test(lines[end])) {
+        flushProse()
+        push('comment', lines.slice(i, end + 1), i)
+        i = end + 1
+        continue
+      }
+    }
+
+    if (BR_LINE_RE.test(line)) {
+      flushProse()
+      push('spacer', [line], i)
+      i++
+      continue
+    }
+
     // --- A line starting with a JSX/HTML tag. (Inline <br/> mid-paragraph is
     // untouched — this only fires at the start of a line.) ---
     const tag = line.match(TAG_OPEN_RE)
@@ -138,7 +196,7 @@ export function splitBlocks(body: string): Block[] {
       if (MANAGED_TAGS.has(name)) {
         flushProse()
         const { end } = scanManagedRun(lines, i)
-        blocks.push(makeBlock('managed', lines.slice(i, end), i))
+        push('managed', lines.slice(i, end), i)
         i = end
         continue
       }
@@ -146,10 +204,15 @@ export function splitBlocks(body: string): Block[] {
       const end = findElementEnd(lines, i, name)
       if (end !== -1) {
         flushProse()
-        const slice = lines.slice(i, end)
-        const kind: BlockKind =
-          name === 'Checklist' && isPlainChecklist(slice) ? 'checklist' : 'raw'
-        blocks.push(makeBlock(kind, slice, i))
+        const open = frameOpenLength(lines, i, end, name)
+        if (open) {
+          push('frameOpen', lines.slice(i, i + open), i, name)
+          const inner = lines.slice(i + open, end - 1)
+          splitLines(inner, base + i + open, name, blocks, state)
+          push('frameClose', [lines[end - 1]], end - 1, name)
+        } else {
+          push('raw', lines.slice(i, end), i)
+        }
         i = end
         continue
       }
@@ -162,7 +225,22 @@ export function splitBlocks(body: string): Block[] {
   }
 
   flushProse()
-  return blocks
+}
+
+/**
+ * How many lines open the frame starting at `start`, or 0 when this element
+ * isn't one: not a wrapping component, an opening tag that spans lines, or a
+ * closing tag that shares its line with text. Those stay locked, whole. A
+ * `<details>` takes its `<summary>` line with it, so the question sits in the
+ * frame's header rather than in the text.
+ */
+function frameOpenLength(lines: string[], start: number, end: number, name: string): number {
+  if (!(name in FRAME_LABELS)) return 0
+  const openRe = new RegExp(`^\\s{0,3}<${name}(\\s[^<>]*)?>\\s*$`)
+  const closeRe = new RegExp(`^\\s*</${name}>\\s*$`)
+  if (end - start < 2 || !openRe.test(lines[start]) || !closeRe.test(lines[end - 1])) return 0
+  const open = name === 'details' && SUMMARY_LINE_RE.test(lines[start + 1] ?? '') ? 2 : 1
+  return start + open <= end - 1 ? open : 0
 }
 
 /** Reassemble a page body from blocks, emitting original bytes where untouched. */
@@ -202,6 +280,57 @@ export function updateBlock(blocks: Block[], id: string, text: string): Block[] 
 /** True once any block differs from the source page. */
 export function isDirty(blocks: Block[]): boolean {
   return blocks.some((b) => b.edited && b.text + b.trail !== b.raw)
+}
+
+/* ------------------------------------------------------------------ *
+ * a frame's one-line field: a <details> question, a governance item's title
+ * ------------------------------------------------------------------ */
+
+const TITLE_ATTR_RE = /\btitle="([^"]*)"/
+
+export interface FrameField {
+  label: string
+  value: string
+}
+
+/**
+ * The plain-text field a frame's opening tag carries, if it has one the
+ * contributor can safely edit. Text that already holds markup or an MDX
+ * expression is left alone: a plain text box would show it as code.
+ */
+export function frameField(block: Block): FrameField | null {
+  if (block.kind !== 'frameOpen') return null
+  if (block.frame === 'details') {
+    const m = block.text.split('\n')[1]?.match(SUMMARY_LINE_RE)
+    if (!m || /[<>{}]|&\w+;/.test(m[1])) return null
+    return { label: 'Question', value: m[1] }
+  }
+  if (block.frame === 'GovernanceChecklistItem') {
+    const m = block.text.match(TITLE_ATTR_RE)
+    if (!m || /[{}]|&\w+;/.test(m[1])) return null
+    return { label: 'Title', value: m[1] }
+  }
+  return null
+}
+
+/**
+ * The frame's opening tag with its field set to `value`. Characters that would
+ * end the field early or start markup are swapped for what reads the same: a
+ * `"` would close the title attribute, and in a summary `<` opens a tag and `{`
+ * an MDX expression.
+ */
+export function withFrameField(block: Block, value: string): string {
+  const clean = value.replace(/[\r\n]+/g, ' ')
+  if (block.frame === 'details') {
+    const safe = clean.replace(/</g, '‹').replace(/>/g, '›').replace(/[{}]/g, '')
+    const lines = block.pristine.split('\n')
+    lines[1] = lines[1].replace(SUMMARY_LINE_RE, (whole, old: string) =>
+      whole.replace(`<summary>${old}</summary>`, `<summary>${safe}</summary>`),
+    )
+    return lines.join('\n')
+  }
+  const safe = clean.replace(/"/g, '”').replace(/[{}]/g, '')
+  return block.pristine.replace(TITLE_ATTR_RE, () => `title="${safe}"`)
 }
 
 /* ------------------------------------------------------------------ *
@@ -245,39 +374,15 @@ function findElementEnd(lines: string[], start: number, name: string): number {
   let depth = 0
 
   for (let i = start; i < lines.length; i++) {
-    const line = lines[i]
+    // A tag inside inline code is a mention, not a tag: a checklist item that
+    // says "use the `<Checklist>` component" would otherwise open a second one
+    // that never closes, and the whole component fell back to locked text.
+    const line = lines[i].replace(/`[^`\n]*`/g, '')
     depth += (line.match(open) || []).length
     depth -= (line.match(close) || []).length
     if (depth <= 0) return i + 1
   }
   return -1
-}
-
-// A <Checklist> gets the friendly checkbox widget only if its body is purely a
-// markdown task list. Anything richer (nested components, prose between items)
-// falls back to a read-only raw block rather than risking a rewrite.
-function isPlainChecklist(slice: string[]): boolean {
-  const inner = slice.slice(1, -1)
-  const meaningful = inner.filter((l) => l.trim() !== '')
-  return meaningful.length > 0 && meaningful.every((l) => TASK_ITEM_RE.test(l))
-}
-
-/** Parse a checklist block into `{ id, items: [{ checked, text }] }`. */
-export function parseChecklist(block: Block): Checklist {
-  const lines = block.text.split('\n')
-  const id = (lines[0].match(/\bid\s*=\s*"([^"]*)"/) || [])[1] ?? ''
-  const items: ChecklistItem[] = []
-  for (const line of lines.slice(1, -1)) {
-    const m = line.match(TASK_ITEM_RE)
-    if (m) items.push({ checked: m[1].toLowerCase() === 'x', text: m[2] })
-  }
-  return { id, items, openTag: lines[0], closeTag: lines[lines.length - 1] }
-}
-
-/** Serialize checklist items back to source, preserving the original tags. */
-export function serializeChecklist({ openTag, closeTag, items }: Checklist): string {
-  const body = items.map((it) => `- [${it.checked ? 'x' : ' '}] ${it.text}`)
-  return [openTag, ...body, closeTag].join('\n')
 }
 
 /** Human label for a managed block, derived from what it actually contains. */
@@ -310,7 +415,13 @@ export function rawLabel(block: Block): string {
   return friendly[name] || `${name} block`
 }
 
-function makeBlock(kind: BlockKind, lines: string[], startLine: number): Block {
+function makeBlock(
+  kind: BlockKind,
+  lines: string[],
+  startLine: number,
+  inside?: string,
+  frame?: string,
+): Block {
   // Peel trailing blank lines off the content but keep them in `trail`, so an
   // edited block preserves the exact spacing that followed it.
   let k = 0
@@ -332,5 +443,7 @@ function makeBlock(kind: BlockKind, lines: string[], startLine: number): Block {
     // where the separator count doesn't line up.
     trail: raw.slice(text.length),
     edited: false,
+    ...(frame ? { frame } : {}),
+    ...(inside ? { inside } : {}),
   }
 }

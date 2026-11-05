@@ -27,7 +27,9 @@ import type { Block } from './types.js'
 //      instead, on a marker line ahead of the fence, and `segmentBody` turns
 //      that into a code block the preview renders itself.
 
-const PREFIX_RE = /^(\s*(?:#{1,6}\s+|[-*+]\s+|\d+\.\s+|>\s?)*)([\s\S]*)$/
+// A checklist item's `[ ] ` counts as prefix too: marked up, it would stop being
+// a checkbox and show the brackets as text.
+const PREFIX_RE = /^(\s*(?:#{1,6}\s+|[-*+]\s+(?:\[[ xX]\]\s+)?|\d+\.\s+|>\s?)*)([\s\S]*)$/
 const FENCE_RE = /^\s*(`{3,}|~{3,})/
 
 export const CODE_MARKS_RE = /^<!--fw-code(?:\s+ins=([\d,]*))?(?:\s+del=([\d,]*))?-->$/
