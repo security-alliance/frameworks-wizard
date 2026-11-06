@@ -24,7 +24,12 @@ export default function BrandBar({
   pageLabel,
   onOpenDraft,
   onDiscardDraft,
+  discarded,
+  onUndoDiscard,
 }: {
+  /** Drafts just discarded, still undoable. */
+  discarded: DraftSummary[]
+  onUndoDiscard: (path: string) => void
   auth: AuthState
   theme: Theme
   onToggleTheme: () => void
@@ -87,6 +92,8 @@ export default function BrandBar({
               pageLabel={pageLabel}
               onOpen={onOpenDraft}
               onDiscard={onDiscardDraft}
+              discarded={discarded}
+              onUndo={onUndoDiscard}
             />
           <button
             onClick={onToggleTheme}
@@ -98,7 +105,17 @@ export default function BrandBar({
           </button>
 
             {auth.status === 'in' && auth.user && (
-              <UserMenu user={auth.user} onSignOut={auth.signOut} />
+              <UserMenu
+                user={auth.user}
+                onSignOut={auth.signOut}
+                drafts={drafts}
+                currentPath={currentPath}
+                pageLabel={pageLabel}
+                onOpenDraft={onOpenDraft}
+                onDiscardDraft={onDiscardDraft}
+                discarded={discarded}
+                onUndoDiscard={onUndoDiscard}
+              />
             )}
           </div>
         </Collapse>

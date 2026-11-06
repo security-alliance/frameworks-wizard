@@ -67,32 +67,6 @@ export async function ghOrNull<T>(token: string, path: string): Promise<T | null
 /** A repo path, with each segment escaped but the slashes kept. */
 export const encodePath = (path: string) => path.split('/').map(encodeURIComponent).join('/')
 
-/** A text file at `ref`, or null if it isn't there. */
-export async function readFile(
-  token: string,
-  repo: string,
-  path: string,
-  ref: string,
-): Promise<string | null> {
-  const file = await ghOrNull<{ type: string; encoding?: string; content?: string }>(
-    token,
-    `/repos/${repo}/contents/${encodePath(path)}?ref=${encodeURIComponent(ref)}`,
-  )
-  if (!file) return null
-  // Over 1 MB the API leaves `content` empty. No docs page comes near that.
-  if (file.type !== 'file' || file.encoding !== 'base64' || file.content == null) {
-    throw new GitHubError(422, `${path} isn't a file the wizard can read.`)
-  }
-  return fromBase64(file.content)
-}
-
-function fromBase64(b64: string): string {
-  const bin = atob(b64.replace(/\s/g, ''))
-  const bytes = new Uint8Array(bin.length)
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
-  return new TextDecoder().decode(bytes)
-}
-
 export function toBase64(text: string): string {
   let bin = ''
   for (const b of new TextEncoder().encode(text)) bin += String.fromCharCode(b)

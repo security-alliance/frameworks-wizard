@@ -41,9 +41,10 @@ export default function SendPanel({
   auth,
   authError,
   justInstalled,
-  noteMissing,
+  blocked,
   request,
-  page,
+  pages,
+  nameOf,
   preview,
   onSent,
 }: {
@@ -53,13 +54,16 @@ export default function SendPanel({
   authError: string | null
   /** Back from installing the app on their copy: say so once it checks out. */
   justInstalled: boolean
-  /** Sending needs a note: "what and why" is the first thing a maintainer
-   *  asks, and one sentence is a small ask from someone who just wrote a page. */
-  noteMissing: boolean
+  /** Why Send waits, said next to the button: no page ticked, or no note.
+   *  "What and why" is the first thing a maintainer asks, and one sentence is
+   *  a small ask from someone who just wrote a page. */
+  blocked: string | null
   /** Builds what gets sent, at the moment it's sent. */
   request: () => SubmitInput
-  /** The page's name, for the Done step. */
-  page: string
+  /** The pages' names, for the Done step. */
+  pages: string[]
+  /** A page path's name, for problems that name pages. */
+  nameOf: (path: string) => string
   /** The pull request as it will go out. */
   preview: ReactNode
   onSent: (sent: Sent) => void
@@ -103,9 +107,10 @@ export default function SendPanel({
     if (check.value.status !== 'ready') return setPhase({ kind: 'setup', fork: check.value })
 
     setPhase({ kind: 'sending' })
-    const res = await submit(request())
+    const input = request()
+    const res = await submit(input)
     if (!res.ok) return fail(res.problem)
-    onSent({ ...res.value, page })
+    onSent({ ...res.value, pages, paths: input.files.map((f) => f.path) })
   }
 
   // Look at their copy as soon as there's someone signed in to look for, so a
@@ -167,7 +172,7 @@ export default function SendPanel({
     line = 'Your draft stays in this browser while you do.'
   } else {
     button = (
-      <Button onClick={send} disabled={busy || phase.kind === 'setup' || noteMissing}>
+      <Button onClick={send} disabled={busy || phase.kind === 'setup' || !!blocked}>
         {sending
           ? 'Sending…'
           : phase.kind === 'checking'
@@ -180,13 +185,13 @@ export default function SendPanel({
     // What pressing it does, said next to it, so sending isn't a leap of
     // faith: who it's from, where it goes, and that nothing is published yet.
     line = sending
-      ? 'Saving your change to your copy and opening your suggestion. This takes a few seconds.'
+      ? `Saving your change${pages.length > 1 ? 's' : ''} to your copy and opening your suggestion. This takes a few seconds.`
       : phase.kind === 'checking'
         ? 'Making sure your copy of the docs is ready.'
         : phase.kind === 'setup'
           ? 'Finish the one-time setup above first.'
-          : noteMissing
-            ? 'Write a note above first. It’s the first thing the maintainers read.'
+          : blocked
+            ? blocked
             : `Opens a pull request on GitHub${auth.user?.login ? ` as @${auth.user.login}` : ''}. Nothing changes on the site until a maintainer accepts it.`
   }
 
@@ -203,7 +208,7 @@ export default function SendPanel({
           />
         )}
         {phase.kind === 'idle' && phase.setUp && <SetUpPanel repo={phase.setUp} />}
-        {phase.kind === 'problem' && <ProblemPanel problem={phase.problem} />}
+        {phase.kind === 'problem' && <ProblemPanel problem={phase.problem} nameOf={nameOf} />}
       </div>
 
       <div className="flex flex-col-reverse items-center gap-3 border-t border-fw-border px-6 py-4 sm:flex-row sm:justify-between">
@@ -448,9 +453,12 @@ function SetupItem({
 
 function ProblemPanel({
   problem,
+  nameOf,
 }: {
   problem: Exclude<SendProblem, { kind: 'needs-setup' }>
+  nameOf: (path: string) => string
 }) {
+  const names = (paths: string[]) => paths.map(nameOf).join(', ')
   if (problem.kind === 'expired') {
     return (
       <p className="text-[0.8125rem] leading-relaxed text-fw-muted">
@@ -481,8 +489,15 @@ function ProblemPanel({
             Your copy of Frameworks needs updating first
           </p>
           <p className="mt-0.5">
-            This page has changed since you made your copy, in the same place
-            you edited, so the wizard can&apos;t combine the two by itself.
+            {problem.pages.length > 1 ? (
+              <>{names(problem.pages)} have changed since you made your copy,</>
+            ) : problem.pages.length === 1 ? (
+              <>{names(problem.pages)} has changed since you made your copy,</>
+            ) : (
+              <>This page has changed since you made your copy,</>
+            )}{' '}
+            in the same place you edited, so the wizard can&apos;t combine the
+            two by itself.
           </p>
           <ol className="mt-2 list-decimal space-y-0.5 pl-5">
             <li>Use the button below to go to your copy of Frameworks on GitHub.</li>
@@ -508,13 +523,19 @@ function ProblemPanel({
       </div>
     )
   }
+  const message =
+    problem.kind === 'gone'
+      ? `${names(problem.pages)} ${problem.pages.length === 1 ? 'has' : 'have'} been moved or removed since you opened ${problem.pages.length === 1 ? 'it' : 'them'}. Untick ${problem.pages.length === 1 ? 'it' : 'them'} and send the rest.`
+      : problem.kind === 'unchanged'
+        ? `Your copy already has the change to ${names(problem.pages)}. Untick it and send the rest.`
+        : problem.message
   return (
     <p
       role="alert"
       className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-[0.8125rem] leading-relaxed text-red-400"
     >
-      That didn&apos;t go through. {problem.message} Nothing was sent, and your
-      draft is still here.
+      That didn&apos;t go through. {message} Nothing was sent, and your
+      drafts are still here.
     </p>
   )
 }

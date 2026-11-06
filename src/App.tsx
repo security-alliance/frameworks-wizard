@@ -17,9 +17,12 @@ import {
   clearDraft,
   applyDraft,
   listDrafts,
+  restoreDraft,
+  readSuggestion,
+  saveSuggestion,
 } from './lib/drafts.js'
-import type { DraftSummary } from './lib/drafts.js'
-import { lastSent, rememberSent } from './lib/send.js'
+import type { Draft, DraftSummary, Suggestion } from './lib/drafts.js'
+import { forgetSent, lastSent, rememberSent } from './lib/send.js'
 import type { Sent } from './lib/send.js'
 import { useAuth } from './lib/useAuth.js'
 import { useTheme } from './lib/useTheme.js'
@@ -65,19 +68,18 @@ export default function App() {
   const [groups, setGroups] = useState<FrameworkGroup[]>([])
   const [contributors, setContributors] = useState<ContributorDirectory>({})
 
-  // What the contributor says about their change, and their answers to the
-  // asks from the PR template. Held here so stepping back to fix a paragraph
-  // doesn't throw away the note they already wrote; the note is also saved
-  // into the page's draft, so a reload doesn't either.
-  //
-  // Every answer starts off. Tagging the page's contributors and the
-  // framework's steward isn't asked at all: the wizard does it and shows you it
-  // has. See prTemplate.ts. What's left is `discord`
-  // (a public post nobody asked for), `typos` (an attestation that you read
-  // your changes back, which we can't make on your behalf) and `stewardInterest`
-  // (volunteering yourself).
-  const [note, setNote] = useState('')
-  const [answers, setAnswers] = useState<PrAnswers>({})
+  // What the contributor says about their change, their answer to the one ask
+  // from the PR template that's theirs (`stewardInterest`, volunteering
+  // themselves), and which drafts they unticked. One of each for the whole
+  // suggestion, whichever page is open, and saved apart from the drafts so a
+  // reload or a trip to GitHub keeps them. See `readSuggestion`.
+  const [suggestion] = useState(readSuggestion)
+  const [note, setNote] = useState(suggestion.note)
+  const [answers, setAnswers] = useState<PrAnswers>(suggestion.answers)
+  const [leftOut, setLeftOut] = useState<string[]>(suggestion.leftOut)
+  useEffect(() => {
+    saveSuggestion({ note, answers, leftOut })
+  }, [note, answers, leftOut])
 
   // The page, as editable blocks. `originalBody` is kept for the technical diff;
   // the blocks themselves carry each section's original bytes, so an untouched
@@ -111,15 +113,25 @@ export default function App() {
   // False once a save has actually failed — private browsing, or a full quota.
   const [persisted, setPersisted] = useState(true)
 
-  // Load the framework/page list + contributor directory once.
-  useEffect(() => {
+  // Load the framework/page list + contributor directory once. The list comes
+  // from GitHub's API without signing in, which allows 60 requests an hour from
+  // one address, so a failure is said, with a way to try again.
+  const [listFailed, setListFailed] = useState(false)
+  const loadPageList = useCallback(() => {
+    setListFailed(false)
     fetchPageList()
       .then(setGroups)
-      .catch((e) => console.error('Page list failed:', e))
+      .catch((e) => {
+        console.error('Page list failed:', e)
+        setListFailed(true)
+      })
+  }, [])
+  useEffect(() => {
+    loadPageList()
     fetchContributors()
       .then(setContributors)
       .catch((e) => console.error('Contributors failed:', e))
-  }, [])
+  }, [loadPageList])
 
   // (Re)load the selected page whenever the path changes.
   useEffect(() => {
@@ -147,12 +159,6 @@ export default function App() {
           setBlocks(fresh)
           setRestored(null)
         }
-        // The note describes *this* page's changes, so it arrives and leaves
-        // with them. Carrying the last page's note across a switch would put a
-        // sentence about the page they left in front of the one they opened.
-        // The Send step's ticks are about this page's changes too.
-        setNote(draft?.note ?? '')
-        setAnswers(draft?.answers ?? {})
         setLoading(false)
       })
       .catch((e: Error) => {
@@ -188,14 +194,19 @@ export default function App() {
     () => groups.flatMap((g) => g.pages).find((p) => p.path === path),
     [groups, path],
   )
+  // Any page by path, for the pages of a suggestion. One not in the page list
+  // (yet, or any more) gets its slugs made readable.
+  const pageEntry = useCallback(
+    (p: string) => groups.flatMap((g) => g.pages).find((e) => e.path === p) ?? toPageEntry(p),
+    [groups],
+  )
 
   // A draft's page by name, for the drafts menu. A draft can outlive its page in
   // the sidebar, or be listed before the page list has loaded; those get the
   // slugs made readable.
-  const pageLabel = useCallback(
-    (p: string) => pageTrail(groups.flatMap((g) => g.pages).find((e) => e.path === p) ?? toPageEntry(p)),
-    [groups],
-  )
+  const pageLabel = useCallback((p: string) => pageTrail(pageEntry(p)), [pageEntry])
+  // Something to send: this page's changes, or another page's draft.
+  const sendable = dirty || drafts.some((d) => d.path !== path)
 
   // What the stepper says under each label. Everything here is state the app
   // already holds, shown where you'd look while deciding whether to click back
@@ -231,7 +242,7 @@ export default function App() {
       // "Ready to send" waits for the note too: it's the one thing the step
       // actually asks for. Signed out, with the note written, signing in is
       // what's left, and it happens on that step.
-      submit: !dirty
+      submit: !sendable
         ? 'nothing to send yet'
         : !note.trim()
           ? 'needs a note'
@@ -246,6 +257,7 @@ export default function App() {
     stepIdx,
     current,
     dirty,
+    sendable,
     note,
     annotated.changedBlocks,
     sent,
@@ -260,34 +272,77 @@ export default function App() {
     setBlocks((bs) => syncChecklistImport(updateBlock(bs, id, text)))
   }
 
-  // Undoing every change takes the note with it, the same way `saveDraft` does:
-  // a sentence describing edits that no longer exist has nothing left to
-  // describe, and leaving it behind would hand it to whatever is written next.
+  // The note and ticks go once no draft is left: a sentence describing edits
+  // that no longer exist has nothing left to describe, and leaving it behind
+  // would hand it to whatever is written next.
+  function forgetSuggestionIfEmpty() {
+    const left = listDrafts()
+    setDrafts(left)
+    if (left.length === 0) {
+      setNote('')
+      setAnswers({})
+      setLeftOut([])
+    }
+  }
+
   function resetEdits() {
     setBlocks(splitBlocks(originalBody))
     clearDraft(path)
     setRestored(null)
-    setNote('')
-    setAnswers({})
-    setDrafts(listDrafts())
+    forgetSuggestionIfEmpty()
   }
 
+  // A discard can be undone for a few seconds: the draft and the suggestion's
+  // note are kept until then, and the menus show "Draft discarded" with Undo
+  // where the row was.
+  const [discarded, setDiscarded] = useState<
+    { summary: DraftSummary; draft: Draft; suggestion: Suggestion }[]
+  >([])
+
   function discardDraft(target: string) {
+    const draft = readDraft(target)
+    const summary = drafts.find((d) => d.path === target)
+    if (draft && summary) {
+      const entry = { summary, draft, suggestion: { note, answers, leftOut } }
+      setDiscarded((d) => [...d.filter((x) => x.summary.path !== target), entry])
+      setTimeout(() => setDiscarded((d) => d.filter((x) => x !== entry)), 6000)
+    }
     clearDraft(target)
     if (target === path) {
       setBlocks(splitBlocks(originalBody))
       setRestored(null)
-      setNote('')
-      setAnswers({})
     }
+    forgetSuggestionIfEmpty()
+  }
+
+  function undoDiscard(target: string) {
+    const entry = discarded.find((x) => x.summary.path === target)
+    if (!entry) return
+    restoreDraft(target, entry.draft)
+    setNote(entry.suggestion.note)
+    setAnswers(entry.suggestion.answers)
+    setLeftOut(entry.suggestion.leftOut)
+    if (target === path) {
+      setBlocks(syncChecklistImport(applyDraft(splitBlocks(originalBody), entry.draft).blocks))
+    }
+    setDiscarded((d) => d.filter((x) => x !== entry))
     setDrafts(listDrafts())
   }
 
-  // Once it's sent, the change lives in the pull request, and the draft has
-  // done its job. Clearing it is what stops the drafts menu offering to send
-  // the same thing twice.
+  // Once it's sent, the change lives in the pull request, and the drafts sent
+  // have done their job. Clearing them is what stops the drafts menu offering
+  // to send the same thing twice. Unticked drafts stay, to be sent on their
+  // own, but the note described what went out, so it goes.
   function finishSend(result: Sent) {
-    resetEdits()
+    for (const p of result.paths) clearDraft(p)
+    if (result.paths.includes(path)) {
+      setBlocks(splitBlocks(originalBody))
+      setRestored(null)
+    }
+    setDrafts(listDrafts())
+    setNote('')
+    setAnswers({})
+    setLeftOut([])
     setSent(result)
     rememberSent(result)
     goTo(stepIndex('done'))
@@ -307,6 +362,12 @@ export default function App() {
   }
   const next = () => goTo(stepIdx + 1)
   const back = () => goTo(stepIdx - 1)
+
+  // Arriving on the picker with no list: try again rather than wait forever.
+  useEffect(() => {
+    if (step.id === 'choose' && listFailed) loadPageList()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step.id])
 
   // Deep links and Back/Forward move the step without going through `goTo`, so
   // the stepper's "how far you've got" mark is kept in step with the URL.
@@ -334,11 +395,11 @@ export default function App() {
     // and saving now would replace the draft with "no edits" and delete it.
     if (restored && restored.applied === 0 && restored.skipped > 0) return
     const t = setTimeout(() => {
-      setPersisted(saveDraft(path, blocks, note, answers))
+      setPersisted(saveDraft(path, blocks))
       setDrafts(listDrafts())
     }, 700)
     return () => clearTimeout(t)
-  }, [blocks, note, answers, loading, error, restored, path])
+  }, [blocks, loading, error, restored, path])
 
   // On the way out, save the last word synchronously — `localStorage` writes
   // block, so the debounce above can't swallow it.
@@ -350,7 +411,7 @@ export default function App() {
   useEffect(() => {
     if (!dirty) return
     const save = () => {
-      setPersisted(saveDraft(path, blocks, note, answers))
+      setPersisted(saveDraft(path, blocks))
     }
     const warn = (e: BeforeUnloadEvent) => {
       save()
@@ -362,7 +423,7 @@ export default function App() {
       window.removeEventListener('beforeunload', warn)
       window.removeEventListener('pagehide', save)
     }
-  }, [dirty, path, blocks, note, answers, persisted])
+  }, [dirty, path, blocks, persisted])
 
   return (
     <div className="fw-app-bg min-h-full">
@@ -376,6 +437,8 @@ export default function App() {
         pageLabel={pageLabel}
         onOpenDraft={openDraft}
         onDiscardDraft={discardDraft}
+        discarded={discarded.map((x) => x.summary)}
+        onUndoDiscard={undoDiscard}
       />
 
       <div className={`mx-auto px-4 py-8 transition-[max-width] duration-200 ${shell}`}>
@@ -403,6 +466,8 @@ export default function App() {
               current={current}
               onPickFramework={pickFramework}
               onPickPage={goToPage}
+              listFailed={listFailed}
+              onRetry={loadPageList}
             />
           )}
           {step.id === 'edit' && (
@@ -444,18 +509,39 @@ export default function App() {
               blocks={blocks}
               originalBody={originalBody}
               originalRaw={originalRaw}
-              changedBlocks={annotated.changedBlocks}
               dirty={dirty}
+              drafts={drafts}
+              pageEntry={pageEntry}
               note={note}
               onNote={setNote}
               answers={answers}
               onAnswer={(id, on) => setAnswers((a) => ({ ...a, [id]: on }))}
+              leftOut={leftOut}
+              onTick={(p, on) =>
+                setLeftOut((l) => (on ? l.filter((x) => x !== p) : [...new Set([...l, p])]))
+              }
               onGoTo={(id) => goTo(stepIndex(id))}
+              onAddPage={() => goTo(stepIndex('choose'))}
+              onCheckPage={(p) => {
+                goToPage(p)
+                goTo(stepIndex('review'))
+              }}
               onSent={finishSend}
             />
           )}
           {step.id === 'done' && (
-            <DoneStep sent={sent} onGoTo={(id) => goTo(stepIndex(id))} />
+            <DoneStep
+              sent={sent}
+              onGoTo={(id) => {
+                // A new suggestion starts: the last one lives in the account
+                // menu now, and "#21 sent" would be about the wrong thing.
+                if (id === 'choose') {
+                  setSent(null)
+                  forgetSent()
+                }
+                goTo(stepIndex(id))
+              }}
+            />
           )}
         </main>
 

@@ -43,19 +43,9 @@ interface DraftEdit {
 export interface Draft {
   savedAt: number
   edits: DraftEdit[]
-  /**
-   * What the contributor wrote on the Send step about their change.
-   *
-   * It rides along with the edits rather than living in its own key, because it
-   * describes them: it is about this page, and a note restored onto somebody
-   * else's page would be worse than no note at all.
-   */
+  /** Only in drafts saved before a suggestion could span pages: the note and
+   *  ticks lived with one page then. Read once by `readSuggestion`. */
   note?: string
-  /**
-   * The Send step's ticks, for the same reason. They also have to survive
-   * signing in again and the one-time setup, which leave the wizard for GitHub
-   * and come back with a fresh page load.
-   */
   answers?: PrAnswers
 }
 
@@ -69,21 +59,14 @@ const editedBlocks = (blocks: Block[]) =>
  * Write the current edits for `path`, or clear the draft when there are none —
  * undoing every change should not leave a ghost to be offered back later.
  */
-export function saveDraft(
-  path: string,
-  blocks: Block[],
-  note = '',
-  answers: PrAnswers = {},
-): boolean {
+export function saveDraft(path: string, blocks: Block[]): boolean {
   const edits = editedBlocks(blocks).map((b) => ({
     line: b.startLine,
     was: b.pristine,
     text: b.text,
   }))
 
-  // No edits, no draft — and the note goes with them. A note describing changes
-  // that no longer exist has nothing left to describe, and keeping one would
-  // put a draft with nothing in it in the drafts menu.
+  // No edits, no draft.
   if (edits.length === 0) {
     clearDraft(path)
     return true
@@ -92,7 +75,7 @@ export function saveDraft(
   try {
     localStorage.setItem(
       key(path),
-      JSON.stringify({ savedAt: Date.now(), edits, note, answers } satisfies Draft),
+      JSON.stringify({ savedAt: Date.now(), edits } satisfies Draft),
     )
     return true
   } catch {
@@ -101,6 +84,15 @@ export function saveDraft(
     // reload. The caller is told so it can show the "are you sure" on closing
     // the tab for exactly these people.
     return false
+  }
+}
+
+/** Put back a draft exactly as it was, for undoing a discard. */
+export function restoreDraft(path: string, draft: Draft): void {
+  try {
+    localStorage.setItem(key(path), JSON.stringify(draft))
+  } catch {
+    /* the undo just doesn't stick past a reload */
   }
 }
 
@@ -183,4 +175,63 @@ export function applyDraft(
   }
 
   return { blocks: next, applied, skipped }
+}
+
+/* ------------------------------------------------------------------ *
+ * the suggestion: one note for all the drafts
+ * ------------------------------------------------------------------ */
+
+// A suggestion is the drafts the contributor has open, sent together as one
+// pull request. What they write about it on the Send step is about the change
+// as a whole, so it lives here, once, rather than with whichever page happens
+// to be open: opening another page to check it mustn't swap the note out.
+//
+// Which drafts were unticked is kept too, and so are the ticks: all of it has
+// to survive signing in and the one-time setup, which leave the wizard for
+// GitHub and come back with a fresh page load.
+
+const SUGGESTION_KEY = 'fw-suggestion'
+
+export interface Suggestion {
+  note: string
+  answers: PrAnswers
+  /** Drafts unticked on the Send step: kept as drafts, sent on their own later. */
+  leftOut: string[]
+}
+
+const EMPTY: Suggestion = { note: '', answers: {}, leftOut: [] }
+
+export function readSuggestion(): Suggestion {
+  try {
+    const raw = localStorage.getItem(SUGGESTION_KEY)
+    if (raw) {
+      const s = JSON.parse(raw) as Partial<Suggestion>
+      return {
+        note: typeof s.note === 'string' ? s.note : '',
+        answers: s.answers ?? {},
+        leftOut: Array.isArray(s.leftOut) ? s.leftOut : [],
+      }
+    }
+    // A note written before notes moved here: take the newest one, so nobody
+    // loses what they wrote to the change.
+    for (const d of listDrafts()) {
+      const draft = readDraft(d.path)
+      if (draft?.note?.trim()) return { note: draft.note, answers: draft.answers ?? {}, leftOut: [] }
+    }
+  } catch {
+    /* fall through */
+  }
+  return { ...EMPTY }
+}
+
+export function saveSuggestion(s: Suggestion): void {
+  try {
+    if (!s.note && !s.leftOut.length && !Object.values(s.answers).some(Boolean)) {
+      localStorage.removeItem(SUGGESTION_KEY)
+    } else {
+      localStorage.setItem(SUGGESTION_KEY, JSON.stringify(s))
+    }
+  } catch {
+    /* the note stays on screen; it just won't survive a reload */
+  }
 }

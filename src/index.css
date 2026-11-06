@@ -37,6 +37,8 @@
   --color-add-soft: var(--fw-add-soft);
   --color-del: var(--fw-del);
   --color-del-soft: var(--fw-del-soft);
+  --color-warn: var(--fw-warn);
+  --color-warn-soft: var(--fw-warn-soft);
 
   /* The docs site's font, loaded in main.tsx, so the page reads the same here
      as on the site. "Inter" stood here before but was never loaded, so each
@@ -69,6 +71,9 @@
   --fw-add-soft: rgba(34, 197, 94, 0.16);
   --fw-del: #f87171;
   --fw-del-soft: rgba(239, 68, 68, 0.14);
+  /* "Changes requested": 10:1 on surface. */
+  --fw-warn: #fbbf24;
+  --fw-warn-soft: rgba(251, 191, 36, 0.14);
 
   --fw-glow: rgba(139, 92, 246, 0.14);
   --fw-code-bg: #0a0a0d;
@@ -101,6 +106,9 @@
   --fw-add-soft: rgba(34, 197, 94, 0.18);
   --fw-del: #b91c1c;
   --fw-del-soft: rgba(239, 68, 68, 0.13);
+  /* 6.8:1 on surface, 6.1:1 on its own soft tint. */
+  --fw-warn: #92400e;
+  --fw-warn-soft: rgba(245, 158, 11, 0.14);
 
   --fw-glow: rgba(139, 92, 246, 0.1);
   --fw-code-bg: #f6f6fa;

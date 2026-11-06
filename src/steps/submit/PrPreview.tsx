@@ -3,14 +3,13 @@ import type { ReactNode } from 'react'
 import { REPO, BRANCH } from '../../lib/github.js'
 import {
   buildPrBody,
-  buildPrTitle,
-  handle,
   prParts,
   TEMPLATE_LINES,
   TEMPLATE_SECTIONS,
+  written,
 } from '../../lib/prTemplate.js'
-import type { PrAnswers } from '../../lib/prTemplate.js'
-import type { AuthUser, PageEntry, Person } from '../../lib/types.js'
+import type { PrBodyInput } from '../../lib/prTemplate.js'
+import type { AuthUser, Person } from '../../lib/types.js'
 
 // The pull request, before it exists.
 //
@@ -29,30 +28,22 @@ import type { AuthUser, PageEntry, Person } from '../../lib/types.js'
 // who wants to see the literal bytes, and comes from `buildPrBody` itself so
 // the two can't disagree.
 export default function PrPreview({
-  current,
+  title,
   user,
-  note,
-  answers,
-  contributors,
-  stewards,
-  added,
-  removed,
+  body,
+  files,
 }: {
-  current?: PageEntry
+  title: string
   user?: AuthUser
-  note: string
-  answers: PrAnswers
-  contributors: Person[]
-  stewards: Person[]
-  added: number
-  removed: number
+  /** What `buildPrBody` is given, so the preview can't drift from it. */
+  body: PrBodyInput
+  /** The files, and how much of each moved. */
+  files: { rel: string; added: number; removed: number }[]
 }) {
   const [raw, setRaw] = useState(false)
 
-  const title = buildPrTitle(current)
   const who = user?.name || user?.login
-  // The same parts `buildPrBody` writes out, so the preview can't drift from it.
-  const parts = prParts({ note, answers, current, contributors, stewards })
+  const parts = prParts(body)
 
   return (
     <div className="overflow-hidden rounded-xl border border-fw-border bg-fw-surface-2/40">
@@ -93,22 +84,24 @@ export default function PrPreview({
           </span>
         </div>
 
-        {/* The file, and how much of it moved. */}
-        {current && (
-          <div className="mt-3.5 flex items-center gap-2 rounded-lg border border-fw-border bg-fw-surface-2/60 px-3 py-1.5">
-            <span className="truncate font-mono text-[0.6875rem] text-fw-muted">
-              {current.rel}
-            </span>
-            <span className="ml-auto shrink-0 font-mono text-[0.6875rem]">
-              <span className="text-add">+{added}</span>{' '}
-              <span className="text-del">−{removed}</span>
-            </span>
-          </div>
+        {/* The files, and how much of each moved. */}
+        {files.length > 0 && (
+          <ul className="mt-3.5 divide-y divide-fw-border overflow-hidden rounded-lg border border-fw-border bg-fw-surface-2/60">
+            {files.map((f) => (
+              <li key={f.rel} className="flex items-center gap-2 px-3 py-1.5">
+                <span className="truncate font-mono text-[0.6875rem] text-fw-muted">{f.rel}</span>
+                <span className="ml-auto shrink-0 font-mono text-[0.6875rem]">
+                  <span className="text-add">+{f.added}</span>{' '}
+                  <span className="text-del">−{f.removed}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
         )}
 
         {raw ? (
           <pre className="mt-3.5 max-h-80 overflow-auto rounded-lg border border-fw-border bg-fw-surface p-3 font-mono text-[0.7188rem] leading-relaxed whitespace-pre-wrap text-fw-muted">
-            {buildPrBody({ note, answers, current, contributors, stewards })}
+            {buildPrBody(body)}
           </pre>
         ) : (
           <div className="mt-3.5 space-y-3.5 rounded-lg border border-fw-border bg-fw-surface p-3.5">
@@ -127,23 +120,27 @@ export default function PrPreview({
                 </p>
               )}
               <ul className="mt-2.5 list-disc space-y-1 pl-4 text-[0.75rem] text-fw-muted">
-                {parts.page && (
+                {parts.pages.length > 0 && (
                   <li>
-                    <span className="font-semibold text-fw-text">Page:</span>{' '}
-                    <span className="font-mono text-[0.6875rem]">{parts.page.rel}</span>
+                    <span className="font-semibold text-fw-text">
+                      {parts.pages.length === 1 ? 'Page' : 'Pages'}:
+                    </span>{' '}
+                    <span className="font-mono text-[0.6875rem]">
+                      {parts.pages.map((x) => x.rel).join(', ')}
+                    </span>
                   </li>
                 )}
                 {parts.people.map((line) => (
                   <li key={line.label}>
                     <span className="font-semibold text-fw-text">{line.label}:</span>{' '}
-                    <Handles people={line.people} />
+                    <Handles people={line.people} notify={line.notify} />
                   </li>
                 ))}
               </ul>
               {parts.volunteer && (
                 <p className="mt-2 text-[0.75rem] text-fw-muted">
                   <span className="font-semibold text-fw-text">
-                    This framework has no steward yet.
+                    {parts.volunteer} has no steward yet.
                   </span>{' '}
                   The contributor has offered to take it on.
                 </p>
@@ -207,13 +204,16 @@ function Tick({ children }: { children: string }) {
 }
 
 // `@handle @handle` — as the mention will actually read once GitHub has it,
-// which on a test copy is without the @ (see `handle`).
-const Handles = ({ people }: { people: Person[] }) => (
+// which on a test copy is without the @ (see `handle`). People who aren't
+// notified are plain names.
+const Handles = ({ people, notify }: { people: Person[]; notify: boolean }) => (
   <>
     {people.map((p, i) => (
       <span key={p.slug}>
         {i > 0 && ' '}
-        <span className="font-medium text-brand-hover">{handle(p.slug)}</span>
+        <span className={notify ? 'font-medium text-brand-hover' : 'text-fw-text'}>
+          {written(p, notify)}
+        </span>
       </span>
     ))}
   </>

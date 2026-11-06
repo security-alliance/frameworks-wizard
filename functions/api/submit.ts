@@ -1,8 +1,9 @@
 // POST /wizard/api/submit — send the contributor's suggestion: commit their
 // edited page to a new branch in their copy, and open a pull request from it.
 //
-// The browser sends the page's path, the page as it loaded it, the page as the
-// contributor left it, and the pull request's title and body. Where it all goes,
+// The browser sends, for each page in the suggestion, its path, the page as it
+// loaded it and the page as the contributor left it, and then the pull
+// request's title and body. All the pages go in one commit and one PR. Where it all goes,
 // which repo and which branch, is decided here and nowhere else.
 //
 // WHERE THE BRANCH STARTS
@@ -22,17 +23,22 @@
 
 import { readSession, tokenUsable } from '../_lib/session.js'
 import { PRIVATE, failure, githubFailure, json, missingEnv, sameOrigin } from '../_lib/http.js'
-import { GitHubError, encodePath, gh, ghGraphql, readFile, toBase64 } from '../_lib/github.js'
+import { GitHubError, encodePath, gh, ghGraphql, toBase64 } from '../_lib/github.js'
 import { findFork } from '../_lib/fork.js'
 import { merge3 } from '../_lib/merge.js'
 import { BRANCH, type Ctx } from '../_lib/env.js'
 
-interface Input {
+interface FileInput {
   path: string
   /** The page as the browser loaded it: where the contributor's edit starts. */
   original: string
   /** The page with their edit. */
   content: string
+}
+
+interface Input {
+  /** One or more pages, all part of the same change: one commit, one PR. */
+  files: FileInput[]
   title: string
   body: string
 }
@@ -47,6 +53,9 @@ const CREATE_COMMIT = `mutation ($input: CreateCommitOnBranchInput!) {
 
 // The largest docs page is under 50 KB.
 const MAX_PAGE = 500_000
+// A guard, not a rule the contributor meets: no real change spans this many.
+const MAX_FILES = 50
+const MAX_TOTAL = 5_000_000
 const MAX_TITLE = 200
 // GitHub's limit is 65,536 characters; this leaves room for `withConflictWarning`.
 const MAX_BODY = 60_000
@@ -74,39 +83,44 @@ export async function onRequestPost({ request, env }: Ctx): Promise<Response> {
     )
     const base = merge_base_commit.sha
 
+    const paths = input.files.map((f) => f.path)
     const [inCopy, upstreamNow] = await Promise.all([
-      readFile(token, fork.repo, input.path, base),
-      readFile(token, upstream, input.path, BRANCH),
+      readFiles(token, fork.repo, base, paths),
+      readFiles(token, upstream, BRANCH, paths),
     ])
-    if (!upstreamNow) {
-      return failure(
-        400,
-        'invalid',
-        'This page has been moved or removed since you opened it, so there is nothing to send your change to.',
-      )
-    }
+
+    // Each page is checked on its own; anything that stops one stops the
+    // whole suggestion, and the answer names the pages so the contributor
+    // knows which to look at or untick.
+    const gone: string[] = []
+    const stale: string[] = []
+    const unchanged: string[] = []
+    const overlap: string[] = []
+    const additions: { path: string; contents: string }[] = []
+    input.files.forEach((file, i) => {
+      const copy = inCopy[i]
+      const now = upstreamNow[i]
+      if (now === null) return void gone.push(file.path)
+      // The page is newer than their copy: there's nothing in the copy to edit.
+      if (copy === null) return void stale.push(file.path)
+      const merged = copy === file.original ? file.content : merge3(copy, file.original, file.content)
+      if (merged === null) return void stale.push(file.path)
+      if (merged === copy) return void unchanged.push(file.path)
+      // Did someone change the same lines on `develop` while they wrote? Then
+      // GitHub will report a conflict, and both sides are told. A change
+      // elsewhere in the page isn't worth a word: GitHub combines it on merge.
+      if (now !== file.original && merge3(now, file.original, file.content) === null) {
+        overlap.push(file.path)
+      }
+      additions.push({ path: file.path, contents: toBase64(merged) })
+    })
+    if (gone.length) return json({ error: 'gone', pages: gone }, 400, PRIVATE)
     // Their copy needs the contributor's own "Sync fork" first. `repo` is so the
     // Send step can link to it.
-    const needsSync = () => json({ error: 'needs-sync', repo: fork.repo }, 409, PRIVATE)
-    // The page is newer than their copy: there's nothing in the copy to edit.
-    if (!inCopy) return needsSync()
+    if (stale.length) return json({ error: 'needs-sync', repo: fork.repo, pages: stale }, 409, PRIVATE)
+    if (unchanged.length) return json({ error: 'unchanged', pages: unchanged }, 400, PRIVATE)
 
-    const merged =
-      inCopy === input.original
-        ? input.content
-        : merge3(inCopy, input.original, input.content)
-    if (merged === null) return needsSync()
-    if (merged === inCopy) {
-      return failure(400, 'invalid', 'Your copy of this page already has this change.')
-    }
-
-    // Did someone change the same lines on `develop` while they wrote? Then
-    // GitHub will report a conflict, and both sides are told. A change
-    // elsewhere in the page isn't worth a word: GitHub combines it on merge.
-    const overlap =
-      upstreamNow !== input.original && merge3(upstreamNow, input.original, input.content) === null
-
-    const branch = await createBranch(token, fork.repo, input.path, base)
+    const branch = await createBranch(token, fork.repo, paths, base)
     try {
       await ghGraphql(token, CREATE_COMMIT, {
         input: {
@@ -114,21 +128,25 @@ export async function onRequestPost({ request, env }: Ctx): Promise<Response> {
           // GitHub refuses the commit if the branch moved since it was made.
           expectedHeadOid: base,
           message: { headline: input.title },
-          fileChanges: { additions: [{ path: input.path, contents: toBase64(merged) }] },
+          fileChanges: { additions },
         },
       })
       const pr = await gh<{ html_url: string; number: number }>(token, `/repos/${upstream}/pulls`, {
         method: 'POST',
         body: {
           title: input.title,
-          body: overlap ? withConflictWarning(input.body) : input.body,
+          body: overlap.length ? withConflictWarning(input.body, overlap, paths.length) : input.body,
           head: `${fork.owner}:${branch}`,
           base: BRANCH,
           // So maintainers can fix a typo themselves instead of asking for it.
           maintainer_can_modify: true,
         },
       })
-      return json({ url: pr.html_url, number: pr.number, overlap }, 200, PRIVATE)
+      return json(
+        { url: pr.html_url, number: pr.number, overlap: overlap.length > 0, overlapPaths: overlap },
+        200,
+        PRIVATE,
+      )
     } catch (e) {
       // Don't leave a half-made branch behind in their copy.
       await gh(token, `/repos/${fork.repo}/git/refs/heads/${encodePath(branch)}`, {
@@ -141,35 +159,83 @@ export async function onRequestPost({ request, env }: Ctx): Promise<Response> {
   }
 }
 
+// Every page at `ref`, null where it isn't there, in one GraphQL query rather
+// than one REST call per page. Cloudflare caps the calls a Worker makes per
+// request (50 on the free plan), and a suggestion can span many pages.
+async function readFiles(
+  token: string,
+  repo: string,
+  ref: string,
+  paths: string[],
+): Promise<(string | null)[]> {
+  const [owner, name] = repo.split('/')
+  const vars = paths.map((_, i) => `$e${i}: String!`).join(', ')
+  const fields = paths
+    .map((_, i) => `f${i}: object(expression: $e${i}) { ... on Blob { text isBinary isTruncated } }`)
+    .join('\n')
+  const query = `query ($owner: String!, $name: String!, ${vars}) {
+  repository(owner: $owner, name: $name) { ${fields} }
+}`
+  const variables: Record<string, string> = { owner, name }
+  paths.forEach((p, i) => (variables[`e${i}`] = `${ref}:${p}`))
+  type Blob = { text: string | null; isBinary: boolean; isTruncated: boolean } | null
+  const data = await ghGraphql<{ repository: Record<string, Blob> | null }>(token, query, variables)
+  if (!data.repository) throw new GitHubError(404, `Couldn't read ${repo}.`)
+  return paths.map((p, i) => {
+    const blob = data.repository![`f${i}`]
+    if (!blob) return null
+    if (blob.isBinary || blob.isTruncated || blob.text == null) {
+      throw new GitHubError(422, `${p} isn't a file the wizard can read.`)
+    }
+    return blob.text
+  })
+}
+
 // A string is the reason the input was refused, written for the contributor.
 async function readInput(request: Request): Promise<Input | string> {
   if (!request.headers.get('Content-Type')?.startsWith('application/json')) {
     return 'Expected JSON.'
   }
-  let data: Partial<Record<keyof Input, unknown>>
+  let data: Record<string, unknown>
   try {
     data = await request.json()
   } catch {
     return 'Expected JSON.'
   }
-  const { path, original, content, title, body } = data ?? {}
-  if (typeof path !== 'string' || !isEditablePage(path)) {
-    return "This page can't be edited with the wizard."
+  const { title, body } = data ?? {}
+  // The one-page shape from before suggestions could span pages, from a tab
+  // that was open across the deploy.
+  const raw = Array.isArray(data?.files) ? data.files : data?.path ? [data] : null
+  if (!raw?.length) return 'There are no changes to send.'
+  if (raw.length > MAX_FILES) return `A suggestion can include up to ${MAX_FILES} pages.`
+
+  const files: FileInput[] = []
+  const seen = new Set<string>()
+  let total = 0
+  for (const f of raw as Partial<Record<keyof FileInput, unknown>>[]) {
+    const { path, original, content } = f ?? {}
+    if (typeof path !== 'string' || !isEditablePage(path) || seen.has(path)) {
+      return "One of these pages can't be edited with the wizard."
+    }
+    seen.add(path)
+    if (
+      typeof original !== 'string' ||
+      typeof content !== 'string' ||
+      original.length > MAX_PAGE ||
+      content.length > MAX_PAGE
+    ) {
+      return 'A page is too large to send.'
+    }
+    total += original.length + content.length
+    if (original === content) return 'One of the pages has no changes to send.'
+    files.push({ path, original, content })
   }
-  if (
-    typeof original !== 'string' ||
-    typeof content !== 'string' ||
-    original.length > MAX_PAGE ||
-    content.length > MAX_PAGE
-  ) {
-    return 'This page is too large to send.'
-  }
-  if (original === content) return 'There are no changes to send.'
+  if (total > MAX_TOTAL) return 'This suggestion is too large to send in one go.'
   if (typeof title !== 'string' || !title.trim() || title.length > MAX_TITLE || /[\r\n]/.test(title)) {
     return 'The title is missing or too long.'
   }
   if (typeof body !== 'string' || body.length > MAX_BODY) return 'The description is too long.'
-  return { path, original, content, title: title.trim(), body }
+  return { files, title: title.trim(), body }
 }
 
 // The same rules as the page picker (isEditablePage in src/lib/github.ts): an
@@ -186,17 +252,19 @@ function isEditablePage(path: string): boolean {
 }
 
 // `wizard/opsec-travel-guide-20261023`, with `-2`, `-3`… for a second
-// suggestion to the same page on the same day.
-async function createBranch(token: string, repo: string, path: string, sha: string): Promise<string> {
-  const slug = path
+// suggestion to the same page on the same day, and
+// `wizard/opsec-travel-guide-and-2-more-20261023` for one spanning pages.
+async function createBranch(token: string, repo: string, paths: string[], sha: string): Promise<string> {
+  const slug = paths[0]
     .replace(/^docs\/pages\//, '')
     .replace(/\.mdx$/, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
-    .slice(0, 60)
+    .slice(0, 50)
+  const more = paths.length > 1 ? `-and-${paths.length - 1}-more` : ''
   const day = new Date().toISOString().slice(0, 10).replace(/-/g, '')
-  const stem = `wizard/${slug}-${day}`
+  const stem = `wizard/${slug}${more}-${day}`
 
   for (let n = 1; n <= 5; n++) {
     const name = n === 1 ? stem : `${stem}-${n}`
@@ -221,10 +289,17 @@ async function createBranch(token: string, repo: string, path: string, sha: stri
 
 // The description ends with the wizard's one-line footer (see buildPrBody), so
 // the warning goes just above it, after the checklist.
-function withConflictWarning(body: string): string {
+function withConflictWarning(body: string, paths: string[], total: number): string {
+  const rel = (p: string) => `\`${p.replace(/^docs\/pages\//, '')}\``
+  const what =
+    total === 1
+      ? 'This page changed'
+      : paths.length === 1
+        ? `${rel(paths[0])} changed`
+        : `These pages changed (${paths.map(rel).join(', ')})`
   const warning = [
     '> [!WARNING]',
-    '> This page changed on `develop` while the contributor was writing, in lines this suggestion also edits, so GitHub will report a conflict. "Allow edits by maintainers" is on, so it can be resolved here.',
+    `> ${what} on \`develop\` while the contributor was writing, in lines this suggestion also edits, so GitHub will report a conflict. "Allow edits by maintainers" is on, so it can be resolved here.`,
   ].join('\n')
   const footer = body.lastIndexOf('\n\n')
   return footer < 0

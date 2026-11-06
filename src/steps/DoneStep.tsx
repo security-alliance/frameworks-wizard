@@ -42,8 +42,8 @@ export default function DoneStep({
         </div>
         <h2 className="text-xl font-semibold text-fw-strong">Sent. Thank you!</h2>
         <p className="mt-2 text-sm leading-relaxed text-fw-muted">
-          Your suggestion for {sent.page} is on GitHub as #{sent.number}, waiting
-          for review.
+          Your suggestion for {describe(sent.pages ?? [sent.page ?? 'this page'])} is on
+          GitHub as #{sent.number}, waiting for review.
         </p>
         <a href={sent.url} target="_blank" rel="noopener noreferrer" className="mt-6 inline-block">
           <Button>
@@ -57,8 +57,11 @@ export default function DoneStep({
           maintainers get the same news, in the pull request itself. */}
       {sent.overlap && (
         <p className="mt-6 rounded-lg border border-fw-border-soft bg-fw-surface-2/40 p-3 text-[0.8125rem] leading-relaxed text-fw-muted">
-          Someone else changed the same lines of this page while you were
-          writing. The maintainers will reconcile the two, so there&apos;s
+          Someone else changed the same lines
+          {sent.overlapPaths && sent.overlapPaths.length > 0 && (sent.pages?.length ?? 1) > 1
+            ? ` of ${sent.overlapPaths.length === 1 ? 'one of these pages' : `${sent.overlapPaths.length} of these pages`}`
+            : ' of this page'}{' '}
+          while you were writing. The maintainers will reconcile the two, so there&apos;s
           nothing you need to do.
         </p>
       )}
@@ -67,9 +70,8 @@ export default function DoneStep({
         <h3 className="text-sm font-semibold text-fw-strong">What happens next</h3>
         <ul className="mt-2 list-disc space-y-1.5 pl-5 text-[0.8125rem] leading-relaxed text-fw-muted">
           <li>
-            The maintainers read it. We&apos;ve mentioned anyone credited on the
-            page, and the framework&apos;s steward if it has one, so they hear
-            about it too.
+            The maintainers read it. If the framework has a steward, we&apos;ve
+            asked them to review it too.
           </li>
           <li>
             If someone has a question or suggests a change, GitHub lets you know.
@@ -104,4 +106,11 @@ export default function DoneStep({
       </div>
     </Card>
   )
+}
+
+/** "Travel Security Guide", "A and B", "3 pages". */
+function describe(pages: string[]): string {
+  if (pages.length === 1) return pages[0]
+  if (pages.length === 2) return `${pages[0]} and ${pages[1]}`
+  return `${pages.length} pages`
 }

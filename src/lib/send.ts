@@ -27,23 +27,48 @@ export interface ForkCheck {
   installUrl: string
 }
 
-export interface SubmitInput {
+export interface SubmitFile {
   path: string
   /** The whole file as it was loaded, frontmatter included. */
   original: string
   /** The whole file with the contributor's edit. */
   content: string
+}
+
+export interface SubmitInput {
+  /** Every page in the suggestion: one commit, one pull request. */
+  files: SubmitFile[]
   title: string
   body: string
 }
 
-export interface Sent {
+/** What /api/submit answers. */
+interface Submitted {
   url: string
   number: number
   /** Someone changed the same lines upstream while they were writing. */
   overlap: boolean
-  /** The page's name, for the Done step. */
-  page: string
+  /** Which pages that happened on. */
+  overlapPaths?: string[]
+}
+
+export interface Sent extends Submitted {
+  /** The pages' names, for the Done step. */
+  pages: string[]
+  /** Their paths, so their drafts can be cleared. */
+  paths: string[]
+  /** Saved before suggestions could span pages; read by the Done step. */
+  page?: string
+}
+
+/** One of the contributor's open pull requests, for the account menu. */
+export interface OpenPr {
+  number: number
+  title: string
+  url: string
+  isDraft: boolean
+  reviewDecision: 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED' | null
+  updatedAt: string
 }
 
 /** Why sending can't go ahead, in the terms the Send step acts on. */
@@ -52,8 +77,12 @@ export type SendProblem =
   | { kind: 'expired' }
   /** The one-time setup isn't done, or was undone on GitHub. */
   | { kind: 'needs-setup' }
-  /** Their copy needs a "Sync fork" before this page can be sent from it. */
-  | { kind: 'needs-sync'; repo: string }
+  /** Their copy needs a "Sync fork" before these pages can be sent from it. */
+  | { kind: 'needs-sync'; repo: string; pages: string[] }
+  /** These pages were moved or removed upstream. */
+  | { kind: 'gone'; pages: string[] }
+  /** Their copy already has these pages' changes. */
+  | { kind: 'unchanged'; pages: string[] }
   | { kind: 'error'; message: string }
 
 type Result<T> = { ok: true; value: T } | { ok: false; problem: SendProblem }
@@ -73,10 +102,16 @@ async function call<T>(path: string, init?: RequestInit): Promise<Result<T>> {
   const data = await res.json().catch(() => null)
   if (res.ok && data) return { ok: true, value: data as T }
 
-  const { error, message, repo } = (data ?? {}) as Record<string, string | undefined>
+  const { error, message, repo, pages = [] } = (data ?? {}) as {
+    error?: string
+    message?: string
+    repo?: string
+    pages?: string[]
+  }
   if (error === 'reauth') return fail({ kind: 'expired' })
   if (error === 'needs-setup') return fail({ kind: 'needs-setup' })
-  if (error === 'needs-sync' && repo) return fail({ kind: 'needs-sync', repo })
+  if (error === 'needs-sync' && repo) return fail({ kind: 'needs-sync', repo, pages })
+  if (error === 'gone' || error === 'unchanged') return fail({ kind: error, pages })
   if (error === 'github' && message) {
     return fail({ kind: 'error', message: `GitHub didn't accept it: “${message}”` })
   }
@@ -89,11 +124,13 @@ async function call<T>(path: string, init?: RequestInit): Promise<Result<T>> {
 export const checkFork = () => call<ForkCheck>('fork')
 
 export const submit = (input: SubmitInput) =>
-  call<Omit<Sent, 'page'>>('submit', {
+  call<Submitted>('submit', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   })
+
+export const listPrs = () => call<{ prs: OpenPr[]; total: number; all: string }>('prs')
 
 // The last suggestion sent from this tab, so reloading the Done step still
 // shows it instead of an empty page that reads as if it got lost.
@@ -104,6 +141,14 @@ export function rememberSent(sent: Sent): void {
     sessionStorage.setItem(SENT_KEY, JSON.stringify(sent))
   } catch {
     /* only a reload of the Done step loses it */
+  }
+}
+
+export function forgetSent(): void {
+  try {
+    sessionStorage.removeItem(SENT_KEY)
+  } catch {
+    /* nothing to do */
   }
 }
 

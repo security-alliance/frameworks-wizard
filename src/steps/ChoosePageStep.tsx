@@ -18,7 +18,12 @@ export default function ChoosePageStep({
   current,
   onPickFramework,
   onPickPage,
+  listFailed,
+  onRetry,
 }: {
+  /** The page list couldn't be loaded from GitHub. */
+  listFailed: boolean
+  onRetry: () => void
   groups: FrameworkGroup[]
   framework: string
   path: string
@@ -77,7 +82,19 @@ export default function ChoosePageStep({
       ) : (
         <div className="flex h-105 flex-col sm:flex-row">
           <aside className="w-full shrink-0 overflow-y-auto border-b border-fw-border bg-fw-surface-2/30 py-2 sm:w-56 sm:border-b-0 sm:border-r">
-            {loading ? (
+            {loading && listFailed ? (
+              // Usually GitHub's hourly limit on requests from one address.
+              <div className="px-4 py-3 text-sm text-fw-muted">
+                <p>Couldn&apos;t load the pages from GitHub. Try again in a minute.</p>
+                <button
+                  type="button"
+                  onClick={onRetry}
+                  className="mt-2 text-xs font-medium text-brand-hover underline"
+                >
+                  Try again
+                </button>
+              </div>
+            ) : loading ? (
               <div className="px-4 py-3 text-sm text-fw-faint">Loading…</div>
             ) : (
               groups.map((g) => {
