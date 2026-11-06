@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { AuthState, AuthStatus, AuthUser } from './types.js'
 
-// Shared sign-in state, so the header avatar and the Connect step read from one
+// Shared sign-in state, so the header avatar and the Send step read from one
 // source instead of polling separately.
 //
 // The browser never receives a GitHub token. It only asks our backend who is

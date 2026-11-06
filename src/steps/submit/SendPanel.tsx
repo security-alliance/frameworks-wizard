@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Button, CheckIcon, ExternalIcon } from '../../components/ui.js'
+import {
+  Button,
+  CheckIcon,
+  ChevronDown,
+  ExternalIcon,
+  GitHubIcon,
+  ShieldIcon,
+} from '../../components/ui.js'
+import { REVOKE_URL } from '../../lib/github.js'
 import { checkFork, signInAndComeBack, submit } from '../../lib/send.js'
 import { rememberReturn } from '../../lib/useWizardRoute.js'
 import type { ForkCheck, SendProblem, Sent, SubmitInput } from '../../lib/send.js'
@@ -31,6 +39,7 @@ type Phase =
 
 export default function SendPanel({
   auth,
+  authError,
   justInstalled,
   noteMissing,
   request,
@@ -39,6 +48,9 @@ export default function SendPanel({
   onSent,
 }: {
   auth: AuthState
+  /** A sign-in that just failed, as GitHub's callback reported it. Signing in
+   *  starts here, so this is where it's said. */
+  authError: string | null
   /** Back from installing the app on their copy: say so once it checks out. */
   justInstalled: boolean
   /** Sending needs a note: "what and why" is the first thing a maintainer
@@ -131,8 +143,25 @@ export default function SendPanel({
     button = <Button disabled>Send for review</Button>
     line = 'One moment…'
   } else if (auth.status === 'out') {
-    button = <Button onClick={signInAndComeBack}>Sign in to send</Button>
-    line = 'Your draft stays in this browser while you do.'
+    button = (
+      <Button onClick={signInAndComeBack}>
+        <GitHubIcon /> Sign in with GitHub and send
+      </Button>
+    )
+    line = (
+      <>
+        No GitHub account?{' '}
+        <a
+          href="https://github.com/signup"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-medium text-brand-hover underline"
+        >
+          Create one
+        </a>
+        , it&apos;s free.
+      </>
+    )
   } else if (phase.kind === 'problem' && phase.problem.kind === 'expired') {
     button = <Button onClick={signInAndComeBack}>Sign in again</Button>
     line = 'Your draft stays in this browser while you do.'
@@ -164,6 +193,7 @@ export default function SendPanel({
   return (
     <>
       <div className="space-y-5 px-6 pb-6">
+        {auth.status === 'out' && <SignInPanel authError={authError} />}
         {preview}
         {phase.kind === 'setup' && (
           <SetupPanel
@@ -186,6 +216,64 @@ export default function SendPanel({
   )
 }
 
+// Signed out: what signing in is for and what it involves, said where the
+// button that needs it is. This used to be a step of its own at the start,
+// before there was anything to send. Here it's the last thing between the
+// contributor and sending, and the draft and note wait for them on this step.
+function SignInPanel({ authError }: { authError: string | null }) {
+  return (
+    <section
+      aria-labelledby="cw-signin"
+      className="rounded-xl border border-brand/30 bg-brand-soft/50 px-4 py-4"
+    >
+      <h3 id="cw-signin" className="flex items-center gap-2 text-sm font-semibold text-fw-strong">
+        <ShieldIcon width={18} height={18} className="shrink-0 text-brand-hover" />
+        Last thing: sign in with GitHub to send
+      </h3>
+      <ul className="mt-2.5 list-disc space-y-1 pl-5 text-[0.8125rem] leading-relaxed text-fw-text">
+        <li>Your GitHub account is how we credit you on the page. We never see your password.</li>
+        <li>
+          The first time, we&apos;ll walk you through two one-time steps: making
+          your own copy of the docs, and letting the wizard save your changes to it.
+        </li>
+        <li>You&apos;ll come straight back here, with your draft and note where you left them.</li>
+      </ul>
+      {authError && (
+        <p
+          role="alert"
+          className="mt-3 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-400"
+        >
+          That didn&apos;t work ({authError}). Please try again.
+        </p>
+      )}
+      {/* Signing out and revoking are different things, and only one of them
+          is under our control. Saying so here, at the moment access is asked
+          for, is the honest place for it. */}
+      <details className="group mt-3">
+        <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[0.7813rem] font-medium text-fw-muted hover:text-fw-text">
+          <ChevronDown className="shrink-0 -rotate-90 transition-transform group-open:rotate-0" />
+          How to take this access away later
+        </summary>
+        <p className="mt-1.5 pl-5 text-[0.7813rem] leading-relaxed text-fw-muted">
+          Signing out ends your session here. To remove the wizard&apos;s access
+          entirely, go to GitHub{' '}
+          <span className="text-fw-text">Settings, then Applications, then Authorized GitHub Apps</span>,
+          and remove it. If you gave it access to your copy of the docs, uninstall
+          it under <span className="text-fw-text">Installed GitHub Apps</span> too.{' '}
+          <a
+            href={REVOKE_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-brand-hover underline"
+          >
+            Open Authorized GitHub Apps
+          </a>
+        </p>
+      </details>
+    </section>
+  )
+}
+
 function SetupPanel({
   fork,
   checking,
@@ -205,7 +293,7 @@ function SetupPanel({
       <h3 id="cw-setup" className="text-sm font-semibold text-fw-strong">
         One-time setup: your own copy of the docs
       </h3>
-      <p className="mt-1 text-[13px] leading-relaxed text-fw-muted">
+      <p className="mt-1 text-[0.8125rem] leading-relaxed text-fw-muted">
         Suggestions are sent from your own copy of the docs on GitHub, called a
         fork. You set it up once, and every suggestion after this one goes
         straight through.
@@ -299,7 +387,7 @@ function SetUpPanel({ repo }: { repo: string }) {
       >
         <CheckIcon width={13} height={13} />
       </span>
-      <div className="min-w-0 text-[13px] leading-relaxed text-fw-muted">
+      <div className="min-w-0 text-[0.8125rem] leading-relaxed text-fw-muted">
         <p className="font-semibold text-fw-text">You&apos;re good to go</p>
         <p className="mt-0.5">
           Your copy of the docs is ready at{' '}
@@ -347,7 +435,7 @@ function SetupItem({
       >
         {done ? <CheckIcon width={13} height={13} /> : n}
       </span>
-      <div className="min-w-0 flex-1 text-[13px] leading-relaxed text-fw-muted">
+      <div className="min-w-0 flex-1 text-[0.8125rem] leading-relaxed text-fw-muted">
         <p className="font-medium text-fw-text">
           {title}
           {done && <span className="sr-only"> (done)</span>}
@@ -365,7 +453,7 @@ function ProblemPanel({
 }) {
   if (problem.kind === 'expired') {
     return (
-      <p className="text-[13px] leading-relaxed text-fw-muted">
+      <p className="text-[0.8125rem] leading-relaxed text-fw-muted">
         <span className="font-semibold text-fw-text">You need to sign in again.</span>{' '}
         Sign-ins last 8 hours, and end early if the wizard&apos;s access was
         removed on GitHub. Sign in again and you&apos;ll come straight back
@@ -380,7 +468,7 @@ function ProblemPanel({
     return (
       <div
         role="alert"
-        className="flex gap-2.5 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-[13px] leading-relaxed text-fw-muted"
+        className="flex gap-2.5 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-[0.8125rem] leading-relaxed text-fw-muted"
       >
         <span aria-hidden className="mt-0.5 shrink-0 text-amber-500">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -423,7 +511,7 @@ function ProblemPanel({
   return (
     <p
       role="alert"
-      className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-[13px] leading-relaxed text-red-400"
+      className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-[0.8125rem] leading-relaxed text-red-400"
     >
       That didn&apos;t go through. {problem.message} Nothing was sent, and your
       draft is still here.

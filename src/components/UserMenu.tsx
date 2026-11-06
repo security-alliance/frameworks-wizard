@@ -60,7 +60,7 @@ export default function UserMenu({
             </div>
           </div>
 
-          <p className="border-b border-fw-border px-4 py-2.5 text-[11px] leading-relaxed text-fw-faint">
+          <p className="border-b border-fw-border px-4 py-2.5 text-[0.6875rem] leading-relaxed text-fw-faint">
             Your suggestion will be credited to this account.
           </p>
 
@@ -92,7 +92,7 @@ export default function UserMenu({
             target="_blank"
             rel="noopener noreferrer"
             role="menuitem"
-            className="block border-t border-fw-border px-4 py-2.5 text-[11px] leading-relaxed text-fw-faint hover:bg-fw-surface-2 hover:text-fw-muted"
+            className="block border-t border-fw-border px-4 py-2.5 text-[0.6875rem] leading-relaxed text-fw-faint hover:bg-fw-surface-2 hover:text-fw-muted"
           >
             To withdraw this app&apos;s access entirely, revoke it on GitHub:
             Settings → Applications → Authorized GitHub Apps.

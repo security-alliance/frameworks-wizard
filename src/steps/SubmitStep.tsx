@@ -4,7 +4,6 @@ import { Card, Button, PencilIcon, ChevronDown } from '../components/ui.js'
 import PrPreview from './submit/PrPreview.js'
 import SendPanel from './submit/SendPanel.js'
 import { REPO } from '../lib/github.js'
-import { titleize } from '../lib/format.js'
 import { joinBlocks } from '../lib/blocks.js'
 import { computeDiffRows } from '../lib/diff.js'
 import {
@@ -50,6 +49,7 @@ export default function SubmitStep({
   fm,
   contributorData,
   auth,
+  authError,
   justInstalled,
   blocks,
   originalBody,
@@ -68,6 +68,8 @@ export default function SubmitStep({
   fm: Frontmatter
   contributorData: ContributorDirectory
   auth: AuthState
+  /** A sign-in that just failed, as GitHub's callback reported it. */
+  authError: string | null
   justInstalled: boolean
   blocks: Block[]
   originalBody: string
@@ -83,7 +85,7 @@ export default function SubmitStep({
 }) {
   const contributors = pageContributors(fm, contributorData)
   const stewards = frameworkStewards(contributorData, current?.framework)
-  const framework = current ? titleize(current.framework) : 'this framework'
+  const framework = current ? current.frameworkTitle : 'this framework'
 
   // What gets sent: the same title and body the preview draws, and the whole
   // file twice, as it loaded and as it is now. The frontmatter is carried over
@@ -119,7 +121,7 @@ export default function SubmitStep({
           </h2>
           <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-fw-muted">
             You haven&apos;t changed anything
-            {current && <> in {titleize(current.name)}</>}. Make an edit first
+            {current && <> in {current.title}</>}. Make an edit first
             and this step will show you exactly what gets sent.
           </p>
           <Button className="mt-6" onClick={() => onGoTo('edit')}>
@@ -142,7 +144,7 @@ export default function SubmitStep({
           <h2 className="text-lg font-semibold text-fw-strong">Send your suggestion</h2>
           <p className="mt-1 text-sm text-fw-muted">
             {changedBlocks} section{changedBlocks === 1 ? '' : 's'} changed
-            {current && <> in {titleize(current.name)}</>}. We read this
+            {current && <> in {current.title}</>}. We read this
             ourselves before anything appears on the site.
           </p>
         </div>
@@ -153,7 +155,7 @@ export default function SubmitStep({
               What did you change, and why?{' '}
               <span className="text-xs font-normal text-fw-faint">Required</span>
             </label>
-            <p id="cw-note-hint" className="mt-1 text-[13px] text-fw-muted">
+            <p id="cw-note-hint" className="mt-1 text-[0.8125rem] text-fw-muted">
               A couple of sentences. This is the first thing we read.
             </p>
             <textarea
@@ -178,13 +180,13 @@ export default function SubmitStep({
           <section>
             <h3 className="text-sm font-semibold text-fw-strong">Who we&apos;ll tell</h3>
             {contributors.length === 0 && stewards.length === 0 ? (
-              <p className="mt-1 text-[13px] leading-relaxed text-fw-muted">
+              <p className="mt-1 text-[0.8125rem] leading-relaxed text-fw-muted">
                 Nobody is credited on this page yet, and this framework has no
                 steward, so your suggestion comes straight to us.
               </p>
             ) : (
               <>
-                <p className="mt-1 text-[13px] leading-relaxed text-fw-muted">
+                <p className="mt-1 text-[0.8125rem] leading-relaxed text-fw-muted">
                   We mention them on your suggestion so it reaches people who can
                   act on it. You don&apos;t need to do anything.
                   {stewards.length > 0 && (
@@ -223,10 +225,11 @@ export default function SubmitStep({
 
         <SendPanel
           auth={auth}
+          authError={authError}
           justInstalled={justInstalled}
           noteMissing={!note.trim()}
           request={request}
-          page={current ? titleize(current.name) : 'this page'}
+          page={current ? current.title : 'this page'}
           onSent={onSent}
           preview={
             <PreviewFold
@@ -274,7 +277,7 @@ function PreviewFold({
       <summary className="flex cursor-pointer list-none items-start gap-2.5 px-3 py-2.5 [&::-webkit-details-marker]:hidden">
         <ChevronDown className="mt-0.5 shrink-0 -rotate-90 text-fw-faint transition-transform group-open:rotate-0 motion-reduce:transition-none" />
         <span className="min-w-0 flex-1">
-          <span className="block text-[13px] font-medium text-fw-text">
+          <span className="block text-[0.8125rem] font-medium text-fw-text">
             What the maintainers will see
           </span>
           <span className="mt-0.5 block text-xs leading-relaxed break-words text-fw-faint">
@@ -318,7 +321,7 @@ function People({ contributors, stewards }: { contributors: Person[]; stewards: 
             }}
           />
           <div className="min-w-0 flex-1">
-            <p className="truncate text-[13px] text-fw-text">
+            <p className="truncate text-[0.8125rem] text-fw-text">
               {person.name} <span className="text-fw-faint">@{person.slug}</span>
             </p>
             <p className="text-xs text-fw-faint">
@@ -330,7 +333,7 @@ function People({ contributors, stewards }: { contributors: Person[]; stewards: 
             </p>
           </div>
           <span
-            className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+            className={`shrink-0 rounded-full px-2 py-0.5 text-[0.6875rem] font-medium ${
               steward ? 'bg-brand-soft text-brand-hover' : 'bg-fw-surface-2 text-fw-faint'
             }`}
           >
@@ -364,7 +367,7 @@ function Offer({
         className="mt-0.5 h-4 w-4 shrink-0 accent-brand"
       />
       <span className="min-w-0 flex-1">
-        <span className="block text-[13px] font-medium text-fw-text">{title}</span>
+        <span className="block text-[0.8125rem] font-medium text-fw-text">{title}</span>
         <span className="mt-0.5 block text-xs leading-relaxed text-fw-faint">{hint}</span>
       </span>
     </label>

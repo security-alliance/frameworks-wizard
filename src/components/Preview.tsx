@@ -67,11 +67,14 @@ export default function Preview({
   frontmatter,
   contributors,
   scrollRef,
+  onExpandGap,
 }: {
   body: string
   frontmatter?: Frontmatter
   contributors?: ContributorDirectory
   scrollRef?: RefObject<HTMLDivElement | null>
+  /** Opens a run of unchanged sections left out of "Changes only". */
+  onExpandGap?: (id: number) => void
 }) {
   const blocks = useMemo(() => segmentBody(body), [body])
   const fm = frontmatter ?? {}
@@ -97,6 +100,21 @@ export default function Preview({
               return <ChangedCode key={i} block={block} />
             case 'unknown':
               return <UnknownComponent key={i} name={block.name} />
+            case 'gap':
+              // Unchanged sections between two changes: opened in place on a
+              // click, like the expand rows between a pull request's changes.
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => onExpandGap?.(block.id)}
+                  className="my-6 flex w-full items-center gap-3 text-xs font-medium text-fw-muted hover:text-fw-text"
+                >
+                  <span className="h-px flex-1 border-t border-dashed border-fw-border" />
+                  {block.count} unchanged section{block.count === 1 ? '' : 's'} · show
+                  <span className="h-px flex-1 border-t border-dashed border-fw-border" />
+                </button>
+              )
             case 'md':
               return (
                 <ReactMarkdown

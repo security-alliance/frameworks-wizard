@@ -64,11 +64,10 @@ function parseHash(hash: string): { step: number | null; path: string | null } {
 // startup and then dropped from the address — see `stripReturnParams`.
 const RETURN_PARAMS = ['connected', 'auth_error', 'setup_action', 'installation_id']
 
-// Where to come back to after a trip to GitHub that started somewhere other
-// than the Sign in step: signing in again from Send, or giving the app access
-// to the contributor's copy. GitHub sends them back to a fixed address, and
-// landing on the welcome screen with their page gone would undo the very
-// thing the trip was for.
+// Where to come back to after a trip to GitHub: signing in from Send, or
+// giving the app access to the contributor's copy. GitHub sends them back to a
+// fixed address, and landing on the welcome screen with their page gone would
+// undo the very thing the trip was for.
 //
 // sessionStorage, because it's this tab's journey, and stamped, so a trip
 // abandoned halfway doesn't steer an unrelated sign-in much later.
@@ -102,7 +101,9 @@ function takeReturn(): string | null {
 // runs state initialisers twice and the second run would find it gone.
 const landing = new URLSearchParams(window.location.search)
 const BACK_TO =
-  landing.has('connected') || landing.has('setup_action') ? takeReturn() : null
+  landing.has('connected') || landing.has('auth_error') || landing.has('setup_action')
+    ? takeReturn()
+    : null
 
 // The landing page keeps a bare address — there's nothing yet to point at — and
 // only the steps that are about a chosen page carry `?page=`.
@@ -116,8 +117,7 @@ function formatUrl(step: number, path: string): string {
 
 // `?connected=1` is a message about one moment, not a place. Left in the URL it
 // would stick: stepping back to Welcome would keep it, and reloading there
-// would read it again and bounce the contributor to the sign-in step they had
-// just left.
+// would read it again and act on a trip to GitHub that was long over.
 function stripReturnParams(search: string): string {
   const q = new URLSearchParams(search)
   for (const p of RETURN_PARAMS) q.delete(p)
@@ -130,7 +130,7 @@ function stripReturnParams(search: string): string {
  */
 export function useWizardRoute(defaultPath: string): WizardRoute {
   // Read once, at startup, before the first `replaceState` clears it from the
-  // address. Held in state so the Connect step can still show what happened.
+  // address. Held in state so the Send step can still show what happened.
   const [authError] = useState<string | null>(() => landing.get('auth_error'))
   const [justInstalled] = useState<boolean>(() => landing.has('setup_action'))
 
@@ -141,14 +141,23 @@ export function useWizardRoute(defaultPath: string): WizardRoute {
   )
 
   const [route, setRoute] = useState<Route>(() => {
+    // Back from GitHub: where the trip started, which `rememberReturn` noted.
+    // Signing in starts on Send, so that's usually where a failed sign-in lands
+    // too, to show what went wrong next to the button that tries again. Without
+    // a note (another tab, or one that expired), Send if a page is named, since
+    // that's the only place sign-in starts, else the welcome screen. A plain
+    // `?connected=1` without one lands wherever the address already pointed.
+    //
+    // An old `#/connect` link, from when signing in was a step of its own,
+    // names no step any more: `parseHash` gives null and it lands on welcome.
     const fromHash = parseHash(BACK_TO ?? window.location.hash)
-    // Back from a sign-in started on the Sign in step: land there, not wherever
-    // the hash last pointed, so the result of signing in is actually visible.
-    // A failed one always lands there, to show what went wrong.
-    const toConnect =
-      landing.has('auth_error') || (landing.has('connected') && BACK_TO === null)
+    const failedWithoutReturn = landing.has('auth_error') && BACK_TO === null
     return {
-      step: toConnect ? stepIndex('connect') : (fromHash.step ?? 0),
+      step: failedWithoutReturn
+        ? fromHash.path
+          ? stepIndex('submit')
+          : 0
+        : (fromHash.step ?? 0),
       path: fromHash.path ?? defaultPath,
     }
   })

@@ -17,7 +17,7 @@ export function Hero() {
       <h1 className="mt-5 text-3xl font-bold tracking-tight text-fw-strong sm:text-4xl">
         What you know is worth writing down.
       </h1>
-      <p className="mx-auto mt-3 max-w-xl text-[15px] leading-relaxed text-fw-muted">
+      <p className="mx-auto mt-3 max-w-xl text-[0.9375rem] leading-relaxed text-fw-muted">
         These pages exist because people before you wrote down what they&apos;d
         learned the hard way. Edit any page like a document, and we&apos;ll turn
         what you write into a proper suggestion for review.
@@ -72,7 +72,7 @@ export function ValueProps({ className = '' }: { className?: string }) {
           </span>
           <div>
             <h3 className="text-sm font-semibold text-fw-strong">{title}</h3>
-            <p className="mt-1 text-[13px] leading-relaxed text-fw-muted">{body}</p>
+            <p className="mt-1 text-[0.8125rem] leading-relaxed text-fw-muted">{body}</p>
           </div>
         </div>
       ))}
@@ -97,7 +97,7 @@ export function GoodFirstEdits({ className = '' }: { className?: string }) {
       <h3 className="text-sm font-semibold text-brand-hover">Good first edits</h3>
       <ul className="mt-3 grid gap-2 sm:grid-cols-2">
         {CONTRIBUTIONS.map((c) => (
-          <li key={c} className="flex items-start gap-2 text-[13px] text-fw-text">
+          <li key={c} className="flex items-start gap-2 text-[0.8125rem] text-fw-text">
             <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-brand" />
             {c}
           </li>
@@ -144,12 +144,14 @@ export function StartCta({
 // up. What's here is what the stepper doesn't say: how long each part takes,
 // which is what makes "about five minutes" believable, and that the story
 // carries on after the send button.
+//
+// Signing in is part of sending, where it happens, and only the first time
+// takes the extra GitHub steps; after that, Send is one click.
 const PATH = [
-  { action: 'Sign in with GitHub', time: '10 sec' },
   { action: 'Pick a page', time: '1 min' },
   { action: 'Write', time: 'up to you' },
   { action: 'Read it back', time: '1 min' },
-  { action: 'Send it', time: '2 min' },
+  { action: 'Send, with a GitHub sign-in the first time', time: '2 min' },
 ]
 
 export function MiniPath() {
@@ -159,16 +161,16 @@ export function MiniPath() {
           no particular order, so the heading carries its own claim rather than
           referring to one ("Where the five minutes go" would point at a number
           the reader may not have met yet). */}
-      <h2 className="text-[13px] font-semibold text-fw-strong">How long it takes</h2>
+      <h2 className="text-[0.8125rem] font-semibold text-fw-strong">How long it takes</h2>
 
       <ol className="mt-2.5 space-y-1.5">
         {PATH.map(({ action, time }) => (
           <li
             key={action}
-            className="flex items-baseline justify-between gap-3 text-[12.5px] text-fw-text"
+            className="flex items-baseline justify-between gap-3 text-[0.7813rem] text-fw-text"
           >
             <span>{action}</span>
-            <span className="shrink-0 font-mono text-[10.5px] text-fw-faint">
+            <span className="shrink-0 font-mono text-[0.6563rem] text-fw-faint">
               {time}
             </span>
           </li>
@@ -176,19 +178,19 @@ export function MiniPath() {
       </ol>
 
       {/* Said plainly, because the five minutes never included the writing and
-          a list totalling "10 sec, 1 min, up to you, 1 min, 2 min" quietly
+          a list totalling "1 min, up to you, 1 min, 2 min" quietly
           admits it. Better to be the one who says so. */}
-      <p className="mt-3 border-t border-fw-border-soft pt-2.5 text-[11.5px] leading-relaxed text-fw-faint">
+      <p className="mt-3 border-t border-fw-border-soft pt-2.5 text-[0.7188rem] leading-relaxed text-fw-faint">
         Five minutes of wizard. The writing takes as long as it takes.
       </p>
 
       {/* The one beat of "what happens after you send" this layout carries:
           the question the rest of the page answers least. */}
       <div className="mt-3.5 rounded-lg bg-fw-surface-2/60 px-3 py-2.5">
-        <div className="text-[10px] font-semibold uppercase tracking-wide text-fw-faint">
+        <div className="text-[0.75rem] font-semibold text-fw-strong">
           Then it&apos;s our turn
         </div>
-        <p className="mt-1 text-[12px] leading-relaxed text-fw-muted">
+        <p className="mt-1 text-[0.75rem] leading-relaxed text-fw-muted">
           We review it, usually within a week, and may ask a question
           before accepting. Nothing reaches the site until we do.
         </p>

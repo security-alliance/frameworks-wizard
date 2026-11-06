@@ -1,4 +1,4 @@
-import { Extension, mergeAttributes } from '@tiptap/react'
+import { Extension, InputRule, mergeAttributes } from '@tiptap/react'
 import type { Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table'
@@ -42,6 +42,9 @@ interface MdState {
   repeat(s: string, n: number): string
   renderContent(node: unknown): void
   renderList(node: unknown, delim: string, first: (i: number) => string): void
+  ensureNewLine(): void
+  flushClose(size?: number): void
+  closeBlock(node: unknown): void
 }
 interface MdNode {
   attrs: Record<string, unknown>
@@ -92,7 +95,12 @@ const ChecklistItem = TaskItem.extend({
                   ? li.querySelector('input[type="checkbox"]')
                   : null
                 li.setAttribute('data-checked', box ? String((box as HTMLInputElement).checked) : 'none')
+                // The space after the box goes with it. Opening a page drops it
+                // anyway, but a paste keeps whitespace, and pasted items came
+                // out as `- [ ]  text`, with two spaces.
+                const after = box?.nextSibling
                 box?.remove()
+                if (after?.nodeType === 3) after.textContent = (after.textContent ?? '').replace(/^\s+/, '')
               }
             })
           },
@@ -171,6 +179,196 @@ const KeepEmptyListItems = Extension.create({
   },
 })
 
+/* ------------------------------------------------------------------ *
+ * where a section sits in its page
+ * ------------------------------------------------------------------ */
+
+/**
+ * What a section's editor needs to know about the rest of the page, which it
+ * can't see: each section is an editor of its own. ProseBlock keeps it current
+ * and hands it over through `pageContext` storage.
+ */
+export interface PageContext {
+  /** False inside a component that is already a checklist, like
+   *  `<Checklist>`, where a new list needs no box of its own. */
+  boxChecklists: boolean
+  /** The last heading before this section on the page. */
+  headingAbove: { level: number; text: string } | null
+  /** The checklist ids the rest of the page already uses. */
+  usedIds: string[]
+}
+
+interface PageContextStorage {
+  get: (() => PageContext) | null
+  /** The id each boxed checklist gets, worked out before each write. */
+  ids: Map<unknown, string>
+}
+
+const PageContextExtension = Extension.create({
+  name: 'pageContext',
+  addStorage(): PageContextStorage {
+    return { get: null, ids: new Map() }
+  },
+})
+
+const pageStore = (editor: Editor): PageContextStorage =>
+  (editor.storage as unknown as { pageContext: PageContextStorage }).pageContext
+
+/** Give a section's editor its place in the page. */
+export function setPageContext(editor: Editor, get: () => PageContext): void {
+  pageStore(editor).get = get
+}
+
+/* ------------------------------------------------------------------ *
+ * new checklists, in a <Checklist> box of their own
+ * ------------------------------------------------------------------ */
+
+// A `- [ ]` list on the site is only tickable inside `<Checklist id="…">`: the
+// box is what turns the boxes on and remembers each reader's ticks, under its
+// id. A list typed or pasted outside one would show boxes nobody can tick, and
+// typing the tags by hand only gets them written out as text (PR #678). So a
+// checklist the contributor adds gets the box when the section is written out.
+//
+// Which lists are new: everything at the top of a section that wasn't already
+// there as a bare list when the section opened. Two pages have bare lists on
+// purpose (incident templates, to copy), and `bare` keeps them as they are.
+
+const TASK_LISTS = new Set(['taskList', 'numberedTaskList'])
+
+// The box's tags, on lines of their own. Markdown reads a tag line as a block of
+// HTML that runs to the next blank line, which would swallow the list under it
+// as text, so the tags are given blank lines before the markdown is read. Code
+// blocks are left alone: a docs page can show the tags as an example.
+const CHECKLIST_TAG_LINE_RE = /^ {0,3}<\/?Checklist(?:\s[^<>]*)?>\s*$/
+const FENCE_LINE_RE = /^\s*(`{3,}|~{3,})/
+const tagsSetUp = new WeakSet<object>()
+
+function separateChecklistTags(src: string): string {
+  let fence: string | null = null
+  return src
+    .split('\n')
+    .map((line) => {
+      const f = line.match(FENCE_LINE_RE)
+      if (f) {
+        if (!fence) fence = f[1]
+        else if (f[1][0] === fence[0] && f[1].length >= fence.length) fence = null
+        return line
+      }
+      return !fence && CHECKLIST_TAG_LINE_RE.test(line) ? `\n${line}\n` : line
+    })
+    .join('\n')
+}
+
+// Reading a section that already has a box in it: a draft being restored, or
+// markdown pasted with the tags. The list inside is marked as boxed and the tag
+// itself dropped, since the editor has no node for it; the box comes back when
+// the section is written out.
+const ChecklistBoxes = Extension.create({
+  name: 'checklistBoxes',
+  addStorage() {
+    return {
+      markdown: {
+        parse: {
+          setup(md: { core: { ruler: { after(a: string, b: string, f: (s: { src: string }) => void): void } } }) {
+            if (tagsSetUp.has(md)) return
+            tagsSetUp.add(md)
+            md.core.ruler.after('normalize', 'fw_checklist_tags', (state) => {
+              state.src = separateChecklistTags(state.src)
+            })
+          },
+          updateDOM(element: HTMLElement) {
+            element.querySelectorAll('checklist').forEach((box) => {
+              for (const child of Array.from(box.children)) {
+                if (child.tagName === 'UL' || child.tagName === 'OL') child.setAttribute('data-boxed', 'true')
+              }
+              box.replaceWith(...Array.from(box.childNodes))
+            })
+          },
+        },
+      },
+    }
+  },
+})
+
+/** A checklist id from a heading: "Web Presence" → `web-presence`, as the docs
+ *  write them. */
+const checklistSlug = (text: string): string =>
+  text
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60)
+    .replace(/-+$/, '')
+
+/**
+ * Mark the bare checklists a section opened with, so they stay as they are.
+ * Called once, when the section's editor is created, and before its safety
+ * check, which compares against the page as written.
+ */
+export function markExistingChecklists(editor: Editor): void {
+  const { state } = editor
+  const tr = state.tr
+  state.doc.forEach((node, pos) => {
+    if (TASK_LISTS.has(node.type.name) && !node.attrs.boxed) {
+      tr.setNodeMarkup(pos, undefined, { ...node.attrs, bare: true })
+    }
+  })
+  if (!tr.docChanged) return
+  tr.setMeta('addToHistory', false)
+  editor.view.dispatch(tr)
+}
+
+// Ids for this write: from the heading above each new checklist, and unique on
+// the page, the way the docs number them (`safety-setup`, `safety-setup-2`).
+function assignChecklistIds(editor: Editor): void {
+  const store = pageStore(editor)
+  store.ids = new Map()
+  const ctx = store.get?.()
+  if (!ctx?.boxChecklists) return
+  const used = new Set(ctx.usedIds)
+  let heading = ctx.headingAbove?.text ?? ''
+  editor.state.doc.forEach((node) => {
+    if (node.type.name === 'heading') heading = node.textContent
+    if (!TASK_LISTS.has(node.type.name) || node.attrs.bare) return
+    const base = checklistSlug(heading) || 'checklist'
+    let id = base
+    for (let n = 2; used.has(id); n++) id = `${base}-${n}`
+    used.add(id)
+    store.ids.set(node, id)
+  })
+}
+
+// Write a list, inside its box when it has an id for this write. The tags sit
+// right against the list, with no blank line, as in every checklist the docs
+// have.
+function writeBoxed(editor: Editor, state: MdState, node: unknown, writeList: () => void): void {
+  const id = pageStore(editor).ids.get(node)
+  if (!id) return writeList()
+  state.write(`<Checklist id="${id}">`)
+  state.ensureNewLine()
+  writeList()
+  state.flushClose(1)
+  state.write('</Checklist>')
+  state.closeBlock(node)
+}
+
+const boxAttributes = {
+  // Came out of a `<Checklist>` box in the section's own text.
+  boxed: {
+    default: false,
+    parseHTML: (el: HTMLElement) => el.getAttribute('data-boxed') === 'true',
+    renderHTML: () => ({}),
+  },
+  // Was in the page as a bare list; see `markExistingChecklists`.
+  bare: {
+    default: false,
+    parseHTML: () => false,
+    renderHTML: () => ({}),
+  },
+}
+
 // The converter keeps bulleted and numbered lists tight (no blank line between
 // items, the way the docs write them) through a `tight` attribute it only gives
 // those two list types. Without the same attribute, every checklist came back
@@ -187,6 +385,17 @@ const TightTaskList = TaskList.extend({
         renderHTML: (attrs: { tight?: boolean }) => ({
           'data-tight': attrs.tight ? 'true' : null,
         }),
+      },
+      ...boxAttributes,
+    }
+  },
+  // Only `serialize`: the converter's own reading of `- [ ]` lists stays.
+  addStorage() {
+    return {
+      markdown: {
+        serialize(this: { editor: Editor }, state: MdState, node: unknown) {
+          writeBoxed(this.editor, state, node, () => state.renderList(node, '  ', () => '- '))
+        },
       },
     }
   },
@@ -227,13 +436,15 @@ const NumberedTaskList = TightTaskList.extend({
   addStorage() {
     return {
       markdown: {
-        serialize(state: MdState, node: MdNode) {
+        serialize(this: { editor: Editor }, state: MdState, node: MdNode) {
           const start = Number(node.attrs.start) || 1
           const width = String(start + node.childCount - 1).length
-          state.renderList(node, state.repeat(' ', width + 2), (i) => {
-            const n = String(start + i)
-            return state.repeat(' ', width - n.length) + n + '. '
-          })
+          writeBoxed(this.editor, state, node, () =>
+            state.renderList(node, state.repeat(' ', width + 2), (i) => {
+              const n = String(start + i)
+              return state.repeat(' ', width - n.length) + n + '. '
+            }),
+          )
         },
         parse: {},
       },
@@ -289,6 +500,94 @@ const AlignedTableCell = TableCell.extend({
   },
 })
 
+// Enter at the very start of a heading. The editor's rule splits the heading
+// in two, so the new empty line above is a heading too, and whatever is typed
+// there comes out as one. In a page, the only way to add text above a section's
+// first heading ("#### Community Features") is this, so a contributor's whole
+// new paragraph went out as `####` (PR #678). Here the line above is ordinary
+// text, and the cursor stays at the start of the heading, as in Notion.
+const EnterAboveHeading = Extension.create({
+  name: 'enterAboveHeading',
+  // Ahead of the editor's own Enter. Anywhere else it does nothing.
+  priority: 1000,
+  addKeyboardShortcuts() {
+    return {
+      Enter: ({ editor }) => {
+        const { $from, empty } = editor.state.selection
+        if (!empty || $from.parent.type.name !== 'heading') return false
+        if ($from.parentOffset !== 0 || $from.parent.content.size === 0) return false
+        const paragraph = editor.schema.nodes.paragraph
+        const index = $from.index(-1)
+        if (!$from.node(-1).canReplaceWith(index, index, paragraph)) return false
+        return editor.commands.command(({ tr, dispatch }) => {
+          if (dispatch) tr.insert($from.before(), paragraph.create()).scrollIntoView()
+          return true
+        })
+      },
+    }
+  },
+})
+
+// `- [ ] ` typed the way markdown writes a checklist item. `- ` makes a bulleted
+// list first, and the checklist shortcut that `[ ] ` then sets off would put a
+// checklist inside that bullet. Here it turns the bulleted list into a checklist
+// instead. (`[ ] ` at the start of an ordinary line already makes one.)
+const ChecklistFromBullet = Extension.create({
+  name: 'checklistFromBullet',
+  // Ahead of the checklist item's own shortcut, which would nest.
+  priority: 1000,
+  addInputRules() {
+    return [
+      new InputRule({
+        find: /^\s*\[( |x|X)?\]\s$/,
+        handler: ({ state, range, chain }) => {
+          const $from = state.doc.resolve(range.from)
+          // The first line of an item in a bulleted list.
+          if ($from.depth < 3 || $from.index(-1) !== 0) return null
+          if ($from.node(-1).type.name !== 'listItem' || $from.node(-2).type.name !== 'bulletList') return null
+          chain().deleteRange(range).toggleTaskList().run()
+        },
+      }),
+    ]
+  },
+})
+
+/**
+ * The heading levels a line may take where the cursor is: never more than one
+ * below the heading above it, the rule the docs' lint checks (MD001). The
+ * heading above can be in an earlier section, which only the page knows.
+ */
+export function headingLimit(editor: Editor): { above: number; max: number } {
+  const { $from } = editor.state.selection
+  const top = $from.index(0)
+  let above = pageStore(editor).get?.()?.headingAbove?.level ?? 1
+  editor.state.doc.forEach((node, _pos, i) => {
+    if (i < top && node.type.name === 'heading') above = Number(node.attrs.level)
+  })
+  return { above, max: above + 1 }
+}
+
+// Real formatting in pasted HTML, as opposed to a code editor's colouring.
+const FORMATTING_TAG_RE = /<(?:p|h[1-6]|ul|ol|li|strong|b|em|i|a|table|blockquote|pre|code|img)\b/i
+
+/**
+ * Paste from a code editor as markdown. VS Code (and editors like it) put the
+ * text on the clipboard twice: as plain text, and as HTML that only colours it
+ * (`<div>`s and `<span>`s). The editor prefers the HTML, which made the markdown
+ * plain text, `- [ ]` and all. When the HTML carries no real formatting, the
+ * plain text is read as markdown instead. Anything else (a web page, Google
+ * Docs, Word) is pasted the usual way.
+ */
+export function pasteCodeEditorMarkdown(editor: Editor | null, event: ClipboardEvent): boolean {
+  const data = event.clipboardData
+  if (!editor || editor.isDestroyed || !data) return false
+  const html = data.getData('text/html')
+  const text = data.getData('text/plain')
+  if (!html || !text || FORMATTING_TAG_RE.test(html)) return false
+  // tiptap-markdown reads a string given to insertContent as markdown.
+  return editor.commands.insertContent(text)
+}
+
 // One shared extension set for every prose block, so what round-trips in the
 // fidelity check is exactly what runs in the browser.
 //
@@ -330,12 +629,21 @@ export const proseExtensions = [
   ChecklistItem.configure({ nested: true }),
   SoftBreakAsSpace,
   KeepEmptyListItems,
+  EnterAboveHeading,
+  ChecklistFromBullet,
+  ChecklistBoxes,
+  PageContextExtension,
   Markdown.configure({
     html: true,
     tightLists: true,
     bulletListMarker: '-',
     linkify: false,
     breaks: false,
+    // Pasted plain text is read as markdown, so a contributor who drafted in
+    // markdown (or asked an AI to) gets headings, lists and checklists, not
+    // the symbols. Cmd/Ctrl+Shift+V still pastes it as it is. Copies from a
+    // code editor come with HTML; see `pasteCodeEditorMarkdown`.
+    transformPastedText: true,
   }),
 ]
 
@@ -371,7 +679,8 @@ const DIVIDER_ROW_RE = /^([ \t>]*)\| ---(?: \| ---)* \|$/gm
  * order, which is the order the tables are written in.
  */
 export function editorMarkdown(editor: Editor): string {
-  const md = (editor.storage as unknown as { markdown: { getMarkdown(): string } }).markdown.getMarkdown()
+  assignChecklistIds(editor)
+  const md =(editor.storage as unknown as { markdown: { getMarkdown(): string } }).markdown.getMarkdown()
   const aligns: (string | null)[][] = []
   ;(editor.state.doc as unknown as DocNode).descendants((node) => {
     if (node.type.name !== 'table') return true

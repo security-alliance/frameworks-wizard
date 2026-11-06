@@ -1,3 +1,4 @@
+import { titleize } from './format.js'
 import type { ContributorDirectory, FrameworkGroup, PageEntry } from './types.js'
 
 // Read-only access to the Frameworks docs repo.
@@ -45,7 +46,7 @@ export async function fetchRawPage(path: string): Promise<string> {
 //   - anything that isn't an .mdx under docs/pages/
 export async function fetchPageList(): Promise<FrameworkGroup[]> {
   const url = `https://api.github.com/repos/${REPO}/git/trees/${BRANCH}?recursive=1`
-  const [res, order] = await Promise.all([fetch(url), fetchSidebarOrder()])
+  const [res, sidebar] = await Promise.all([fetch(url), fetchSidebar()])
   if (!res.ok) {
     throw new Error(`Could not load page list from GitHub (${res.status}).`)
   }
@@ -58,20 +59,34 @@ export async function fetchPageList(): Promise<FrameworkGroup[]> {
 
   const pages = data.tree
     .filter((node) => node.type === 'blob' && isEditablePage(node.path))
-    .map((node) => toPageEntry(node.path))
+    .map((node) => toPageEntry(node.path, sidebar))
 
   // Only offer pages that actually appear in the site's sidebar. This drops
   // non-sidebar folders like `config/` and `contribute/`. If the sidebar
   // couldn't be read, fall back to showing everything editable.
+  const { order } = sidebar
   const scoped = order.size > 0 ? pages.filter((p) => order.has(p.path)) : pages
 
   return groupByFramework(scoped, order)
 }
 
-// Parse the sidebar order straight from vocs.config.ts so the picker matches
-// the live site. The config lists routes in sidebar order as `link: '/a/b'`,
-// which map 1:1 to `docs/pages/a/b.mdx`. Returns a Map(path -> order index).
-// If the config can't be read, we fall back to alphabetical (order stays empty).
+/** What the site's sidebar says, read from vocs.config.ts. */
+export interface Sidebar {
+  /** Page path → its position in the sidebar. */
+  order: Map<string, number>
+  /** Page path → the page's title, as the sidebar shows it. */
+  pageTitles: Map<string, string>
+  /** Folder (`devsecops/isolation`) → the title of the group holding it. */
+  folderTitles: Map<string, string>
+}
+
+const NO_SIDEBAR: Sidebar = { order: new Map(), pageTitles: new Map(), folderTitles: new Map() }
+
+// Parse the sidebar straight from vocs.config.ts so the picker matches the live
+// site, in order and in names. The config lists routes in sidebar order as
+// `link: '/a/b'`, which map 1:1 to `docs/pages/a/b.mdx`, each with the `text:`
+// the site shows for it. If the config can't be read, the order falls back to
+// alphabetical and the names to `titleize`.
 //
 // Only the `sidebar` array is read. The file also has a `topNav` above it whose
 // two links, Changelog and Contributing, would otherwise score as routes 0 and
@@ -79,26 +94,87 @@ export async function fetchPageList(): Promise<FrameworkGroup[]> {
 // picker and floating Contributing above Introduction. Scoping the scan to the
 // sidebar gives the real running order: Introduction, the frameworks, Guides,
 // SEAL Certifications, then Contributing.
-async function fetchSidebarOrder(): Promise<Map<string, number>> {
+async function fetchSidebar(): Promise<Sidebar> {
   try {
     const res = await fetch(
       `https://raw.githubusercontent.com/${REPO}/${BRANCH}/vocs.config.ts`,
     )
-    if (!res.ok) return new Map()
-    const sidebar = sliceSidebar(await res.text())
-    const order = new Map<string, number>()
-    let i = 0
-    for (const m of sidebar.matchAll(/link:\s*'([^']+)'/g)) {
-      const link = m[1]
-      if (!link.startsWith('/')) continue // socials and other outbound links
-      const route = link.replace(/^\//, '').replace(/\/$/, '')
-      const path = `${DOCS_ROOT}${route}.mdx`
-      if (!order.has(path)) order.set(path, i++)
-    }
-    return order
+    if (!res.ok) return NO_SIDEBAR
+    return parseSidebar(sliceSidebar(await res.text()))
   } catch {
-    return new Map()
+    return NO_SIDEBAR
   }
+}
+
+/**
+ * Read the sidebar's entries: `{ text: 'Overview', link: '/ai-security/overview' }`
+ * is a page, `{ text: 'AI Security', items: [ … ] }` a group. Slugs make poor
+ * names ("Ai Security", "Dprk It Workers", "Ens"), and the real ones are right
+ * here.
+ *
+ * A group has no folder of its own in the config, so it is given the folder
+ * all its pages share: `devsecops` for DevSecOps, `devsecops/isolation` for
+ * Isolation & Sandboxing. A group spanning several folders, like Frameworks,
+ * shares none and names nothing. Where two groups share a folder (Introduction
+ * and Interactive content are both `intro/`), the first one names it.
+ *
+ * Exported for the checks; the app reaches it through `fetchPageList`.
+ */
+export function parseSidebar(sidebar: string): Sidebar {
+  const out: Sidebar = { order: new Map(), pageTitles: new Map(), folderTitles: new Map() }
+  type Entry = { text?: string; link?: string; routes: string[] }
+  const stack: Entry[] = [{ routes: [] }]
+  // One string literal, quotes and escapes included, so a brace inside a title
+  // can't open or close an entry.
+  const TOKEN_RE = /'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)"|\b(text|link)\s*:|[{}]/g
+  let key: 'text' | 'link' | null = null
+  let i = 0
+  for (const m of sidebar.matchAll(TOKEN_RE)) {
+    const top = stack[stack.length - 1]
+    if (m[3]) {
+      key = m[3] as 'text' | 'link'
+    } else if (m[1] !== undefined || m[2] !== undefined) {
+      const value = (m[1] ?? m[2]).replace(/\\(.)/g, '$1')
+      if (key) top[key] = value
+      key = null
+    } else if (m[0] === '{') {
+      stack.push({ routes: [] })
+    } else if (stack.length > 1) {
+      const entry = stack.pop()!
+      const parent = stack[stack.length - 1]
+      if (entry.link?.startsWith('/')) {
+        // A page. Links that don't start with `/` are socials and the like.
+        const route = entry.link.replace(/^\//, '').replace(/\/$/, '')
+        const path = `${DOCS_ROOT}${route}.mdx`
+        if (!out.order.has(path)) out.order.set(path, i++)
+        if (entry.text && !out.pageTitles.has(path)) out.pageTitles.set(path, entry.text)
+        parent.routes.push(route)
+      } else if (entry.routes.length) {
+        // A group.
+        const folder = sharedFolder(entry.routes)
+        if (folder && entry.text && !out.folderTitles.has(folder)) out.folderTitles.set(folder, entry.text)
+        parent.routes.push(...entry.routes)
+      }
+    }
+  }
+  // A folder the sidebar shows as one link to its overview, not as a group
+  // (`opsec/mfa/overview`, "Multi-Factor Authentication"), is named by that
+  // link, rather than "Mfa".
+  for (const [path, title] of out.pageTitles) {
+    const m = path.match(/^docs\/pages\/(.+)\/overview\.mdx$/)
+    if (m && !out.folderTitles.has(m[1])) out.folderTitles.set(m[1], title)
+  }
+  return out
+}
+
+/** The deepest folder every route sits in: `devsecops` for
+ *  `devsecops/overview` and `devsecops/isolation/x`. '' when there's none. */
+function sharedFolder(routes: string[]): string {
+  const dirs = routes.map((r) => r.split('/').slice(0, -1))
+  const first = dirs[0]
+  let n = 0
+  while (n < first.length && dirs.every((d) => d[n] === first[n])) n++
+  return first.slice(0, n).join('/')
 }
 
 // The text of the `sidebar: [ … ]` array, found by matching brackets so nested
@@ -124,7 +200,7 @@ function isEditablePage(path: string): boolean {
   return true
 }
 
-function toPageEntry(path: string): PageEntry {
+export function toPageEntry(path: string, sidebar: Sidebar = NO_SIDEBAR): PageEntry {
   const rel = path.slice(DOCS_ROOT.length) // "opsec/passwords/managers.mdx"
   const segments = rel.split('/')
   const framework = segments[0]
@@ -132,7 +208,27 @@ function toPageEntry(path: string): PageEntry {
   // Any folders between the framework and the file — used to differentiate
   // nested pages (e.g. opsec has many "overview" pages in different subfolders).
   const subdir = segments.slice(1, -1)
-  return { path, framework, subdir, name, rel }
+  // The sidebar's names, and the slug made readable where it has none (a page
+  // not in the sidebar, or a sidebar that couldn't be read).
+  const folder = (depth: number) => {
+    const key = segments.slice(0, depth + 1).join('/')
+    return sidebar.folderTitles.get(key) ?? titleize(segments[depth])
+  }
+  return {
+    path,
+    framework,
+    subdir,
+    name,
+    rel,
+    title: sidebar.pageTitles.get(path) ?? titleize(name),
+    frameworkTitle: folder(0),
+    subdirTitles: subdir.map((_, i) => folder(i + 1)),
+  }
+}
+
+/** Where a page sits, by name: `AI Security › Overview`. */
+export function pageTrail(page: PageEntry): string {
+  return [page.frameworkTitle, ...page.subdirTitles, page.title].join(' › ')
 }
 
 function groupByFramework(
@@ -151,6 +247,7 @@ function groupByFramework(
 
   const result = [...groups.entries()].map(([framework, items]) => ({
     framework,
+    title: items[0].frameworkTitle,
     // Pages within a framework: sidebar order first, then alphabetical.
     pages: items.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name)),
     // A framework's rank = its earliest page in the sidebar.
@@ -160,7 +257,7 @@ function groupByFramework(
   // Frameworks: sidebar order first, then alphabetical for any not in sidebar.
   return result
     .sort((a, b) => a._rank - b._rank || a.framework.localeCompare(b.framework))
-    .map(({ framework, pages }) => ({ framework, pages }))
+    .map(({ framework, title, pages }) => ({ framework, title, pages }))
 }
 
 // Fetch the contributor directory (slug -> { name, avatar, github, company … }).

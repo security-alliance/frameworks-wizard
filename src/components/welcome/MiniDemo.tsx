@@ -166,10 +166,10 @@ function Caption({ stage }: { stage: Stage }) {
     // pager off the edge of the box — a flex child won't shrink below its
     // content without it.
     <div className="flex min-w-0 items-center gap-2.5">
-      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand text-[11px] font-bold text-white">
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand text-[0.6875rem] font-bold text-white">
         {step}
       </span>
-      <span className="text-[13px] font-semibold leading-snug text-fw-strong">
+      <span className="text-[0.8125rem] font-semibold leading-snug text-fw-strong">
         {text}
       </span>
     </div>

@@ -5,13 +5,31 @@ import { CheckIcon } from './ui.js'
 // Where you are, and what's true there.
 //
 // It has to look like something you can press: pointer cursor, a hover surface
-// rather than a hairline, and steps you can't reach dimmed *before* you touch
-// them, so the difference is visible rather than discoverable.
+// rather than a hairline, and steps not done yet marked *before* you touch
+// them (a dashed circle), so the difference is visible rather than
+// discoverable, while every label stays readable.
 //
 // The second line under each label carries what is actually true at that step
-// right now (who you're signed in as, which page you picked, how many sections
-// you've changed) rather than a synonym of the label. A line that changes reads
+// right now (which page you picked, how many sections you've changed, whether
+// it's ready to send) rather than a synonym of the label. A line that changes reads
 // as live, which is also the cheapest way to make the thing look interactive.
+
+// A status on one line. A long one ("Community Management › Session") wrapped
+// under its step and stood taller than the rest. In a trail the page is the
+// part that matters, so the framework before it gives way first
+// ("Community Manage… › Session"), and the page only if it has to.
+const CLIP = 'min-w-0 overflow-hidden text-ellipsis whitespace-pre'
+
+function OneLine({ text }: { text: string }) {
+  const cut = text.lastIndexOf(' › ')
+  if (cut < 0) return <span className={CLIP}>{text}</span>
+  return (
+    <>
+      <span className={`${CLIP} shrink-[100]`}>{text.slice(0, cut)}</span>
+      <span className={CLIP}>{text.slice(cut)}</span>
+    </>
+  )
+}
 
 export default function Stepper({
   current,
@@ -45,12 +63,12 @@ export default function Stepper({
           <p className="text-sm font-semibold text-fw-strong">
             {activeStep.label}
           </p>
-          <p className="shrink-0 font-mono text-[11px] tabular-nums text-fw-faint">
+          <p className="shrink-0 font-mono text-[0.6875rem] tabular-nums text-fw-faint">
             Step {current + 1} of {STEPS.length}
           </p>
         </div>
         {activeStatus && (
-          <p className="mt-0.5 text-[12px] text-fw-muted">{activeStatus}</p>
+          <p className="mt-0.5 text-[0.75rem] text-fw-muted">{activeStatus}</p>
         )}
       </div>
 
@@ -63,7 +81,7 @@ export default function Stepper({
             const canGo = reachable && !isHere
 
             return (
-              <li key={step.id} className="flex flex-1">
+              <li key={step.id} className="flex min-w-0 flex-1">
                 <button
                   type="button"
                   disabled={!reachable}
@@ -78,18 +96,23 @@ export default function Stepper({
                     // beside it, or keyboard users get no ring at all.
                     'focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/60',
                     canGo && 'cursor-pointer hover:bg-fw-surface-2',
-                    !reachable && 'cursor-default opacity-45',
+                    // No dimming of the whole step: at 45% opacity the labels
+                    // of the steps ahead fell to about 1.8:1 and couldn't be
+                    // read, which is the opposite of a map of what's coming.
+                    // "Not yet" is the dashed circle's job instead.
+                    !reachable && 'cursor-default',
                   ]
                     .filter(Boolean)
                     .join(' ')}
                 >
                   <span
                     className={[
-                      'flex h-8 w-8 items-center justify-center rounded-full border text-[13px] font-semibold transition-colors',
+                      'flex h-8 w-8 items-center justify-center rounded-full border text-[0.8125rem] font-semibold transition-colors',
                       state === 'done' && 'border-brand bg-brand text-white',
                       state === 'active' &&
                         'border-brand bg-brand text-white shadow-[0_0_0_4px_rgba(139,92,246,0.2)]',
-                      state === 'todo' && 'border-fw-border bg-fw-surface text-fw-faint',
+                      state === 'todo' &&
+                        'border-dashed border-fw-faint/60 bg-fw-surface text-fw-muted',
                       canGo && 'group-hover:border-brand',
                     ]
                       .filter(Boolean)
@@ -100,7 +123,7 @@ export default function Stepper({
 
                   <span
                     className={`mt-1.5 text-xs font-semibold ${
-                      state === 'todo' ? 'text-fw-faint' : 'text-fw-text'
+                      state === 'todo' ? 'text-fw-muted' : 'text-fw-text'
                     } ${canGo ? 'group-hover:text-fw-strong group-hover:underline' : ''}`}
                   >
                     {step.label}
@@ -108,13 +131,15 @@ export default function Stepper({
 
                   {/* Live where there's something live to say, the step's own
                       blurb where there isn't. Tabular figures so a changing
-                      count doesn't shuffle the label above it. */}
+                      count doesn't shuffle the label above it. One line, like
+                      the others, with the whole text on hover. */}
                   <span
-                    className={`mt-0.5 text-[11px] tabular-nums ${
+                    title={status[step.id] ?? step.sub}
+                    className={`mt-0.5 flex w-full min-w-0 justify-center text-[0.6875rem] tabular-nums ${
                       isHere ? 'text-fw-muted' : 'text-fw-faint'
                     }`}
                   >
-                    {status[step.id] ?? step.sub}
+                    <OneLine text={status[step.id] ?? step.sub} />
                   </span>
                 </button>
               </li>

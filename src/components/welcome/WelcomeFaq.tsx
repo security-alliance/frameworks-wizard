@@ -62,18 +62,18 @@ export default function WelcomeFaq({
 
   return (
     <Card className="fw-faq px-5 py-5">
-      <h2 className="text-[13px] font-semibold text-fw-strong">
+      <h2 className="text-[0.8125rem] font-semibold text-fw-strong">
         Questions people usually have
       </h2>
 
       <div className="mt-1.5 divide-y divide-fw-border-soft">
         {shown.map(({ q, a }) => (
           <details key={q} className="group">
-            <summary className="flex cursor-pointer list-none items-start gap-2 py-2.5 text-[13px] font-medium leading-snug text-fw-text hover:text-fw-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60">
+            <summary className="flex cursor-pointer list-none items-start gap-2 py-2.5 text-[0.8125rem] font-medium leading-snug text-fw-text hover:text-fw-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60">
               <ChevronDown className="mt-0.5 shrink-0 text-fw-faint transition-transform group-open:rotate-180" />
               {q}
             </summary>
-            <p className="pb-3 pl-6 pr-1 text-[12.5px] leading-relaxed text-fw-muted">
+            <p className="pb-3 pl-6 pr-1 text-[0.7813rem] leading-relaxed text-fw-muted">
               {a}
             </p>
           </details>

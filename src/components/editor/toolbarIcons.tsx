@@ -41,6 +41,31 @@ export const OrderedListIcon = (p: IconProps) => (
     <path d="M4 5.5h1V9M3.6 15c0-.8 1.4-.8 1.4 0s-1.4 1.2-1.4 2.2H5" strokeWidth="1.4" />
   </svg>
 )
+export const ChecklistIcon = (p: IconProps) => (
+  <svg {...ico} {...p}>
+    <rect x="3.5" y="4.5" width="5" height="5" rx="1" strokeWidth="1.6" />
+    <path d="M4.6 7.1l1.2 1.2 2-2.3" strokeWidth="1.6" />
+    <rect x="3.5" y="14.5" width="5" height="5" rx="1" strokeWidth="1.6" />
+    <path d="M12 7h8M12 17h8" />
+  </svg>
+)
+export const CopyIcon = (p: IconProps) => (
+  <svg {...ico} width={15} height={15} {...p}>
+    <rect x="9" y="9" width="11" height="11" rx="2" />
+    <path d="M5 15V5a2 2 0 0 1 2-2h8" />
+  </svg>
+)
+export const HelpIcon = (p: IconProps) => (
+  <svg {...ico} width={15} height={15} {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17h.01" />
+  </svg>
+)
+export const CloseIcon = (p: IconProps) => (
+  <svg {...ico} width={15} height={15} {...p}>
+    <path d="M6 6l12 12M18 6L6 18" />
+  </svg>
+)
 export const QuoteIcon = (p: IconProps) => (
   <svg {...ico} {...p}>
     <path d="M5 5v14" strokeWidth="2.5" />

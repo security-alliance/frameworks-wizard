@@ -277,6 +277,37 @@ export function updateBlock(blocks: Block[], id: string, text: string): Block[] 
   })
 }
 
+// The page's import of the docs components, which every page has for its tags
+// and credits: `import { TagList, AttributionList, ContributeFooter } from '…/components'`.
+const COMPONENTS_IMPORT_RE = /^(import\s*\{)([^}]*)(\}\s*from\s*['"][^'"]*components['"];?)/m
+const IMPORTS_CHECKLIST_RE = /^import\s*\{[^}]*\bChecklist\b[^}]*\}/m
+const CHECKLIST_OPEN_RE = /^\s{0,3}<Checklist\s/m
+
+/**
+ * Keep the page's import of `Checklist` in step with the checklists the
+ * contributor added: a page using the component without importing it doesn't
+ * build. Added to the import the page already has while a new checklist is
+ * there, and taken out again with the last one, so undoing leaves no trace.
+ * Pages that already use the component are left alone.
+ */
+export function syncChecklistImport(blocks: Block[]): Block[] {
+  const setup = blocks.find((b) => b.kind === 'managed' && COMPONENTS_IMPORT_RE.test(b.pristine))
+  if (!setup) return blocks
+  const hasIt =
+    blocks.some((b) => b.kind === 'managed' && IMPORTS_CHECKLIST_RE.test(b.pristine)) ||
+    blocks.some((b) => b.kind === 'frameOpen' && b.frame === 'Checklist')
+  if (hasIt) return blocks
+  const needed = blocks.some((b) => b.kind === 'prose' && b.edited && CHECKLIST_OPEN_RE.test(b.text))
+  const text = needed
+    ? setup.pristine.replace(
+        COMPONENTS_IMPORT_RE,
+        (_, open: string, names: string, close: string) => `${open}${names.replace(/\s*,?\s*$/, '')}, Checklist ${close}`,
+      )
+    : setup.pristine
+  if (text === setup.text) return blocks
+  return blocks.map((b) => (b === setup ? { ...b, text, edited: needed } : b))
+}
+
 /** True once any block differs from the source page. */
 export function isDirty(blocks: Block[]): boolean {
   return blocks.some((b) => b.edited && b.text + b.trail !== b.raw)

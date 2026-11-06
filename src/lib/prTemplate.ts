@@ -1,5 +1,4 @@
 import { REPO, BRANCH } from './github.js'
-import { titleize } from './format.js'
 import type {
   ContributorDirectory,
   Frontmatter,
@@ -160,7 +159,7 @@ function person(slug: string, directory: ContributorDirectory): Person {
 /** `docs(opsec): update Travel Security Guide` — the repo's commit convention. */
 export function buildPrTitle(current: PageEntry | null | undefined): string {
   if (!current) return 'docs: update page'
-  return `docs(${current.framework}): update ${titleize(current.name)}`
+  return `docs(${current.framework}): update ${current.title}`
 }
 
 export interface PrBodyInput {

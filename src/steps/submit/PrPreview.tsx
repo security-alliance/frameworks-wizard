@@ -61,18 +61,18 @@ export default function PrPreview({
           is let someone believe they've already sent it. */}
       <div className="flex items-center gap-2 border-b border-fw-border px-4 py-2.5">
         <GithubMark />
-        <span className="min-w-0 truncate font-mono text-[11px] text-fw-muted">
+        <span className="min-w-0 truncate font-mono text-[0.6875rem] text-fw-muted">
           {REPO}
         </span>
-        <span className="ml-auto shrink-0 rounded-full border border-fw-border bg-fw-surface px-2 py-0.5 text-[11px] font-medium text-fw-faint">
+        <span className="ml-auto shrink-0 rounded-full border border-fw-border bg-fw-surface px-2 py-0.5 text-[0.6875rem] font-medium text-fw-faint">
           Not sent yet
         </span>
       </div>
 
       <div className="px-4 py-3.5">
-        <h4 className="text-[15px] font-semibold text-fw-strong">{title}</h4>
+        <h4 className="text-[0.9375rem] font-semibold text-fw-strong">{title}</h4>
 
-        <div className="mt-2 flex flex-wrap items-center gap-2 text-[12px] text-fw-muted">
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-[0.75rem] text-fw-muted">
           {user?.avatar ? (
             <img
               src={user.avatar}
@@ -80,14 +80,14 @@ export default function PrPreview({
               className="h-5 w-5 shrink-0 rounded-full border border-fw-border object-cover"
             />
           ) : (
-            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand text-[10px] font-bold text-white">
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand text-[0.625rem] font-bold text-white">
               {(who ?? 'Y').charAt(0).toUpperCase()}
             </span>
           )}
           <span>
             <span className="font-medium text-fw-text">{who ?? 'you'}</span> wants
             to merge 1 commit into{' '}
-            <span className="rounded bg-fw-surface-2 px-1 py-0.5 font-mono text-[11px] text-fw-text">
+            <span className="rounded bg-fw-surface-2 px-1 py-0.5 font-mono text-[0.6875rem] text-fw-text">
               {BRANCH}
             </span>
           </span>
@@ -96,10 +96,10 @@ export default function PrPreview({
         {/* The file, and how much of it moved. */}
         {current && (
           <div className="mt-3.5 flex items-center gap-2 rounded-lg border border-fw-border bg-fw-surface-2/60 px-3 py-1.5">
-            <span className="truncate font-mono text-[11px] text-fw-muted">
+            <span className="truncate font-mono text-[0.6875rem] text-fw-muted">
               {current.rel}
             </span>
-            <span className="ml-auto shrink-0 font-mono text-[11px]">
+            <span className="ml-auto shrink-0 font-mono text-[0.6875rem]">
               <span className="text-add">+{added}</span>{' '}
               <span className="text-del">−{removed}</span>
             </span>
@@ -107,7 +107,7 @@ export default function PrPreview({
         )}
 
         {raw ? (
-          <pre className="mt-3.5 max-h-80 overflow-auto rounded-lg border border-fw-border bg-fw-surface p-3 font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap text-fw-muted">
+          <pre className="mt-3.5 max-h-80 overflow-auto rounded-lg border border-fw-border bg-fw-surface p-3 font-mono text-[0.7188rem] leading-relaxed whitespace-pre-wrap text-fw-muted">
             {buildPrBody({ note, answers, current, contributors, stewards })}
           </pre>
         ) : (
@@ -118,19 +118,19 @@ export default function PrPreview({
                   shows where it will go rather than what a PR without one
                   would say. */}
               {parts.note ? (
-                <p className="mt-1.5 text-[13px] leading-relaxed whitespace-pre-wrap text-fw-text">
+                <p className="mt-1.5 text-[0.8125rem] leading-relaxed whitespace-pre-wrap text-fw-text">
                   {parts.note}
                 </p>
               ) : (
-                <p className="mt-1.5 text-[13px] text-fw-faint italic">
+                <p className="mt-1.5 text-[0.8125rem] text-fw-faint italic">
                   Your note goes here.
                 </p>
               )}
-              <ul className="mt-2.5 list-disc space-y-1 pl-4 text-[12px] text-fw-muted">
+              <ul className="mt-2.5 list-disc space-y-1 pl-4 text-[0.75rem] text-fw-muted">
                 {parts.page && (
                   <li>
                     <span className="font-semibold text-fw-text">Page:</span>{' '}
-                    <span className="font-mono text-[11px]">{parts.page.rel}</span>
+                    <span className="font-mono text-[0.6875rem]">{parts.page.rel}</span>
                   </li>
                 )}
                 {parts.people.map((line) => (
@@ -141,7 +141,7 @@ export default function PrPreview({
                 ))}
               </ul>
               {parts.volunteer && (
-                <p className="mt-2 text-[12px] text-fw-muted">
+                <p className="mt-2 text-[0.75rem] text-fw-muted">
                   <span className="font-semibold text-fw-text">
                     This framework has no steward yet.
                   </span>{' '}
@@ -168,14 +168,14 @@ export default function PrPreview({
               </section>
             )}
 
-            <p className="text-[12px] text-fw-faint italic">{parts.footer}</p>
+            <p className="text-[0.75rem] text-fw-faint italic">{parts.footer}</p>
           </div>
         )}
 
         <button
           type="button"
           onClick={() => setRaw((r) => !r)}
-          className="mt-2.5 text-[11px] font-medium text-fw-faint underline transition-colors hover:text-fw-text"
+          className="mt-2.5 text-[0.6875rem] font-medium text-fw-faint underline transition-colors hover:text-fw-text"
         >
           {raw ? 'Back to the readable version' : 'Show the text we actually send'}
         </button>
@@ -186,17 +186,17 @@ export default function PrPreview({
 
 // A section heading, as GitHub draws the template's `###`.
 const Heading = ({ children }: { children: ReactNode }) => (
-  <h5 className="text-[12px] font-semibold text-fw-strong">{children}</h5>
+  <h5 className="text-[0.75rem] font-semibold text-fw-strong">{children}</h5>
 )
 
 // Every line listed is ticked: lines that don't apply are left out of the pull
 // request altogether.
 function Tick({ children }: { children: string }) {
   return (
-    <li className="flex gap-2 text-[12px] leading-relaxed">
+    <li className="flex gap-2 text-[0.75rem] leading-relaxed">
       <span
         aria-hidden
-        className="mt-px flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[3px] border border-brand bg-brand text-[9px] font-bold text-white"
+        className="mt-px flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[0.1875rem] border border-brand bg-brand text-[0.5625rem] font-bold text-white"
       >
         ✓
       </span>

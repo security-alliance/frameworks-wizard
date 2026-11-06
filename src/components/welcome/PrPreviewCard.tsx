@@ -28,30 +28,29 @@ export default function PrPreviewCard() {
             push the status pill off the edge. */}
         <div className="flex items-center gap-2 border-b border-fw-border px-4 py-2.5">
           <GithubMark />
-          <span className="min-w-0 truncate font-mono text-[11px] text-fw-muted">
+          <span className="min-w-0 truncate font-mono text-[0.6875rem] text-fw-muted">
             {REPO}
           </span>
-          <span className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full bg-add-soft px-2 py-0.5 text-[11px] font-medium text-add">
+          <span className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full bg-add-soft px-2 py-0.5 text-[0.6875rem] font-medium text-add">
             <span className="h-1.5 w-1.5 rounded-full bg-add" />
             Open
           </span>
         </div>
 
         <div className="px-4 py-3.5">
-          <h3 className="text-[15px] font-semibold text-fw-strong">
-            {PR_TITLE}{' '}
-            <span className="font-normal text-fw-faint">#412</span>
-          </h3>
+          {/* No PR number: real ones on the frameworks repo are in the 600s,
+              so a made-up number can be a real PR someone goes looking for. */}
+          <h3 className="text-[0.9375rem] font-semibold text-fw-strong">{PR_TITLE}</h3>
 
           {/* Who opened it, and where it's headed. */}
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-[12px] text-fw-muted">
-            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand text-[10px] font-bold text-white">
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-[0.75rem] text-fw-muted">
+            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand text-[0.625rem] font-bold text-white">
               Y
             </span>
             <span>
               <span className="font-medium text-fw-text">you</span> want to merge
               1 commit into{' '}
-              <span className="rounded bg-fw-surface-2 px-1 py-0.5 font-mono text-[11px] text-fw-text">
+              <span className="rounded bg-fw-surface-2 px-1 py-0.5 font-mono text-[0.6875rem] text-fw-text">
                 {BRANCH}
               </span>
             </span>
@@ -60,10 +59,10 @@ export default function PrPreviewCard() {
           {/* The change itself. */}
           <div className="mt-3.5 overflow-hidden rounded-lg border border-fw-border">
             <div className="flex items-center gap-2 border-b border-fw-border bg-fw-surface-2/60 px-3 py-1.5">
-              <span className="truncate font-mono text-[11px] text-fw-muted">
+              <span className="truncate font-mono text-[0.6875rem] text-fw-muted">
                 {PR_FILE}
               </span>
-              <span className="ml-auto shrink-0 font-mono text-[11px]">
+              <span className="ml-auto shrink-0 font-mono text-[0.6875rem]">
                 <span className="text-add">+1</span>{' '}
                 <span className="text-del">−1</span>
               </span>
@@ -77,7 +76,7 @@ export default function PrPreviewCard() {
                 Each row is a flex line so the marker stays in its own column
                 and a wrapped line hangs under the text rather than under the
                 +/−. */}
-            <div className="font-mono text-[11.5px] leading-relaxed">
+            <div className="font-mono text-[0.7188rem] leading-relaxed">
               <div className="flex gap-1.5 bg-del-soft px-3 py-0.5 text-fw-muted">
                 <span className="select-none text-del">−</span>
                 <span className="min-w-0 wrap-break-word">{SAMPLE_ORIGINAL}</span>
@@ -94,7 +93,7 @@ export default function PrPreviewCard() {
             </div>
           </div>
 
-          <div className="mt-3 flex items-center gap-2 text-[12px] text-fw-faint">
+          <div className="mt-3 flex items-center gap-2 text-[0.75rem] text-fw-faint">
             <ClockMark />
             Waiting for us to review it
           </div>

@@ -1,9 +1,15 @@
 import { useEffect, useState } from 'react'
 import LinkPopover from './LinkPopover.js'
+import CopyInstructions from './CopyInstructions.js'
+import StyleMenu from './StyleMenu.js'
+import Tooltip, { Keys } from './Tooltip.js'
+import { shortcut } from '../../lib/format.js'
 import type { ChainedCommands, Editor } from '@tiptap/react'
 import type { ReactNode } from 'react'
 import {
   BoldIcon,
+  ChecklistIcon,
+  HelpIcon,
   ItalicIcon,
   LinkIcon,
   ListIcon,
@@ -14,7 +20,18 @@ import {
 // Formatting controls for whichever section currently has the cursor. A single
 // shared toolbar (rather than one per section) keeps the page calm and matches
 // what people expect from a word processor.
-export default function Toolbar({ editor }: { editor: Editor | null }) {
+export default function Toolbar({
+  editor,
+  helpOpen,
+  helpIds,
+  onToggleHelp,
+}: {
+  editor: Editor | null
+  helpOpen: boolean
+  /** The help panel's ids, for `aria-controls`. */
+  helpIds: string
+  onToggleHelp: () => void
+}) {
   // A section that has been reset or scrolled out of the block list leaves its
   // editor destroyed behind it; driving that would throw.
   const live = editor && !editor.isDestroyed ? editor : null
@@ -40,17 +57,32 @@ export default function Toolbar({ editor }: { editor: Editor | null }) {
   return (
     <div className="flex flex-wrap items-center gap-1 border-b border-fw-border bg-fw-surface-2/40 px-3 py-2">
       <Group>
-        <Btn label="Bold" active={on('bold')} disabled={disabled} onClick={run((c) => c.toggleBold())}>
+        <Btn
+          label="Bold"
+          hint={<><Keys>**text**</Keys>, or {shortcut('Mod-B')}</>}
+          active={on('bold')}
+          disabled={disabled}
+          onClick={run((c) => c.toggleBold())}
+        >
           <BoldIcon />
         </Btn>
-        <Btn label="Italic" active={on('italic')} disabled={disabled} onClick={run((c) => c.toggleItalic())}>
+        <Btn
+          label="Italic"
+          hint={<><Keys>*text*</Keys>, or {shortcut('Mod-I')}</>}
+          active={on('italic')}
+          disabled={disabled}
+          onClick={run((c) => c.toggleItalic())}
+        >
           <ItalicIcon />
         </Btn>
         <div className="relative" data-link-control>
+          {/* No keyboard shortcut: the link extension doesn't register one. */}
           <Btn
             label={on('link') ? 'Edit link' : 'Link'}
+            hint="Select text first"
             active={on('link') || linkOpen}
             disabled={disabled}
+            quiet={linkOpen}
             onClick={() => setLinkOpen((o) => !o)}
           >
             <LinkIcon />
@@ -63,30 +95,14 @@ export default function Toolbar({ editor }: { editor: Editor | null }) {
 
       <Divider />
 
-      <Group>
-        <Btn
-          label="Heading"
-          active={on('heading', { level: 2 })}
-          disabled={disabled}
-          onClick={run((c) => c.toggleHeading({ level: 2 }))}
-        >
-          <span className="text-[13px] font-bold">H2</span>
-        </Btn>
-        <Btn
-          label="Subheading"
-          active={on('heading', { level: 3 })}
-          disabled={disabled}
-          onClick={run((c) => c.toggleHeading({ level: 3 }))}
-        >
-          <span className="text-[13px] font-bold">H3</span>
-        </Btn>
-      </Group>
+      <StyleMenu editor={live} />
 
       <Divider />
 
       <Group>
         <Btn
           label="Bulleted list"
+          hint={<>Type <Keys>-</Keys> and a space, or {shortcut('Mod-Shift-8')}</>}
           active={on('bulletList')}
           disabled={disabled}
           onClick={run((c) => c.toggleBulletList())}
@@ -95,6 +111,7 @@ export default function Toolbar({ editor }: { editor: Editor | null }) {
         </Btn>
         <Btn
           label="Numbered list"
+          hint={<>Type <Keys>1.</Keys> and a space, or {shortcut('Mod-Shift-7')}</>}
           active={on('orderedList')}
           disabled={disabled}
           onClick={run((c) => c.toggleOrderedList())}
@@ -102,7 +119,18 @@ export default function Toolbar({ editor }: { editor: Editor | null }) {
           <OrderedListIcon />
         </Btn>
         <Btn
+          label="Checklist"
+          // ⌘⇧9 is the task list's own shortcut, which the checklist keeps.
+          hint={<>Type <Keys>[ ]</Keys> and a space, or {shortcut('Mod-Shift-9')}</>}
+          active={on('taskList') || on('numberedTaskList')}
+          disabled={disabled}
+          onClick={run((c) => c.toggleTaskList())}
+        >
+          <ChecklistIcon />
+        </Btn>
+        <Btn
           label="Quote"
+          hint={<>Type <Keys>&gt;</Keys> and a space, or {shortcut('Mod-Shift-B')}</>}
           active={on('blockquote')}
           disabled={disabled}
           onClick={run((c) => c.toggleBlockquote())}
@@ -111,9 +139,23 @@ export default function Toolbar({ editor }: { editor: Editor | null }) {
         </Btn>
       </Group>
 
-      <span className="ml-auto hidden text-[11px] text-fw-faint sm:block">
-        {disabled ? 'Click any paragraph to start editing' : 'Editing'}
-      </span>
+      <div className="ml-auto flex items-center gap-2">
+        <CopyInstructions editor={live} />
+        <button
+          type="button"
+          onClick={onToggleHelp}
+          aria-expanded={helpOpen}
+          aria-controls={helpIds}
+          className={`flex h-9 items-center gap-1.5 rounded-md border px-2.5 text-[0.7813rem] font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 ${
+            helpOpen
+              ? 'border-brand bg-brand-soft text-fw-strong'
+              : 'border-fw-border text-fw-text hover:bg-fw-surface-2'
+          }`}
+        >
+          <HelpIcon />
+          Formatting help
+        </button>
+      </div>
     </div>
   )
 }
@@ -137,37 +179,54 @@ const Group = ({ children }: { children: ReactNode }) => (
 )
 const Divider = () => <span className="mx-1 h-5 w-px bg-fw-border" />
 
+// Inactive (no section has the cursor) is `aria-disabled`, not `disabled`: a
+// disabled button gets no mouse events in some browsers, so its tooltip
+// wouldn't show, and people can't learn the toolbar before clicking into the
+// page. It stays readable, in the faint text colour rather than at 30%
+// opacity, which was far below the contrast floor.
 function Btn({
   label,
+  hint,
   active,
   disabled,
+  quiet,
   onClick,
   children,
 }: {
   label: string
+  /** How else to do it, for the tooltip. */
+  hint?: ReactNode
   active: boolean
   disabled: boolean
+  /** No tooltip, while the button's own panel is open under it. */
+  quiet?: boolean
   onClick: () => void
   children: ReactNode
 }) {
   return (
-    <button
-      type="button"
-      title={label}
-      aria-label={label}
-      aria-pressed={active}
-      disabled={disabled}
-      // Keep the cursor in the document — losing the selection would make the
-      // command apply to nothing.
-      onMouseDown={(e) => e.preventDefault()}
-      onClick={onClick}
-      className={`flex h-8 min-w-8 items-center justify-center rounded-md px-1.5 transition-colors disabled:opacity-30 ${
-        active
-          ? 'bg-brand text-white'
-          : 'text-fw-muted hover:bg-fw-surface-2 hover:text-fw-text'
-      }`}
-    >
-      {children}
-    </button>
+    <Tooltip name={label} hint={hint} off={quiet}>
+      {(tip) => (
+        <button
+          {...tip}
+          type="button"
+          aria-label={label}
+          aria-pressed={active}
+          aria-disabled={disabled}
+          // Keep the cursor in the document — losing the selection would make the
+          // command apply to nothing.
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => !disabled && onClick()}
+          className={`flex h-8 min-w-8 items-center justify-center rounded-md px-1.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 ${
+            disabled
+              ? 'cursor-default text-fw-faint'
+              : active
+                ? 'bg-brand text-white'
+                : 'text-fw-muted hover:bg-fw-surface-2 hover:text-fw-text'
+          }`}
+        >
+          {children}
+        </button>
+      )}
+    </Tooltip>
   )
 }

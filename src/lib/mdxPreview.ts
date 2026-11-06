@@ -7,7 +7,7 @@
 //   - <Checklist id="…"> wrappers are dropped but their inner markdown task
 //     list is kept, so it renders as real checkboxes (it's author content).
 
-import { CODE_MARKS_RE } from './inlineDiff.js'
+import { CODE_MARKS_RE, GAP_RE } from './inlineDiff.js'
 
 /** Render as GitHub-flavored markdown. */
 export interface MdSegment {
@@ -42,7 +42,15 @@ export interface UnknownSegment {
   name: string
 }
 
+/** Unchanged sections left out of the "Changes only" view (see `changesOnly`). */
+export interface GapSegment {
+  type: 'gap'
+  id: number
+  count: number
+}
+
 export type Segment =
+  | GapSegment
   | MdSegment
   | TagListSegment
   | AttributionSegment
@@ -101,6 +109,13 @@ export function segmentBody(body: string): Segment[] {
         ins: numbers(marks[1]),
         del: numbers(marks[2]),
       })
+      continue
+    }
+
+    const gap = GAP_RE.exec(line.trim())
+    if (gap) {
+      flush()
+      blocks.push({ type: 'gap', id: Number(gap[1]), count: Number(gap[2]) })
       continue
     }
 

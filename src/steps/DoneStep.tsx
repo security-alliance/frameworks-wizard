@@ -56,7 +56,7 @@ export default function DoneStep({
           in the page is GitHub's to combine and not worth a word. The
           maintainers get the same news, in the pull request itself. */}
       {sent.overlap && (
-        <p className="mt-6 rounded-lg border border-fw-border-soft bg-fw-surface-2/40 p-3 text-[13px] leading-relaxed text-fw-muted">
+        <p className="mt-6 rounded-lg border border-fw-border-soft bg-fw-surface-2/40 p-3 text-[0.8125rem] leading-relaxed text-fw-muted">
           Someone else changed the same lines of this page while you were
           writing. The maintainers will reconcile the two, so there&apos;s
           nothing you need to do.
@@ -65,7 +65,7 @@ export default function DoneStep({
 
       <section className="mt-8">
         <h3 className="text-sm font-semibold text-fw-strong">What happens next</h3>
-        <ul className="mt-2 list-disc space-y-1.5 pl-5 text-[13px] leading-relaxed text-fw-muted">
+        <ul className="mt-2 list-disc space-y-1.5 pl-5 text-[0.8125rem] leading-relaxed text-fw-muted">
           <li>
             The maintainers read it. We&apos;ve mentioned anyone credited on the
             page, and the framework&apos;s steward if it has one, so they hear
@@ -84,7 +84,7 @@ export default function DoneStep({
       </section>
 
       {/* Asked here rather than before sending: now there's a link to share. */}
-      <p className="mt-6 rounded-lg border border-fw-border-soft bg-fw-surface-2/40 p-3 text-[13px] leading-relaxed text-fw-muted">
+      <p className="mt-6 rounded-lg border border-fw-border-soft bg-fw-surface-2/40 p-3 text-[0.8125rem] leading-relaxed text-fw-muted">
         Want the community&apos;s take too? Share the link in{' '}
         <a
           href={DISCORD_URL}

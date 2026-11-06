@@ -21,6 +21,7 @@ export default function BrandBar({
   minimal = false,
   drafts,
   currentPath,
+  pageLabel,
   onOpenDraft,
   onDiscardDraft,
 }: {
@@ -29,6 +30,7 @@ export default function BrandBar({
   onToggleTheme: () => void
   drafts: DraftSummary[]
   currentPath: string
+  pageLabel: (path: string) => string
   onOpenDraft: (path: string) => void
   onDiscardDraft: (path: string) => void
   /** Focus mode. The logo stays — it's the one mark saying whose site this is,
@@ -46,8 +48,13 @@ export default function BrandBar({
         </div>
       </Collapse>
 
+      {/* `relative z-30`: the blur makes the header a layer of its own, and the
+          drafts menu's `z-50` only counts inside it. Without a place for the
+          header itself, the page after it (the stepper, whose steps are
+          positioned) was drawn over the open menu. The account menu opens
+          from here too. */}
       <header
-        className={`flex items-center justify-between gap-3 px-5 backdrop-blur transition-[padding,background-color] duration-300 ease-out motion-reduce:transition-none ${
+        className={`relative z-30 flex items-center justify-between gap-3 px-5 backdrop-blur transition-[padding,background-color] duration-300 ease-out motion-reduce:transition-none ${
           minimal
             ? 'bg-transparent py-2'
             : 'border-b border-fw-border-soft bg-fw-bg/70 py-3'
@@ -77,6 +84,7 @@ export default function BrandBar({
             <DraftsMenu
               drafts={drafts}
               currentPath={currentPath}
+              pageLabel={pageLabel}
               onOpen={onOpenDraft}
               onDiscard={onDiscardDraft}
             />

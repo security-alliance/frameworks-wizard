@@ -1,4 +1,5 @@
 import { diffLines, diffWordsWithSpace } from 'diff'
+import { headingsIn } from './headings.js'
 import { unwrapMarkdown } from './markdown.js'
 import type { Block } from './types.js'
 
@@ -49,6 +50,8 @@ interface Row {
 export interface AnnotatedPage {
   body: string
   changedBlocks: number
+  /** Each block's text in `body`, in order; `body` is these joined by '\n'. */
+  pieces: string[]
 }
 
 /**
@@ -57,19 +60,93 @@ export interface AnnotatedPage {
 export function annotateBlocks(blocks: Block[]): AnnotatedPage {
   let changedBlocks = 0
 
-  const body = blocks
-    .map((b) => {
-      if (!b.edited || b.text + b.trail === b.raw) return b.raw
-      changedBlocks++
-      // Prose and the page title read as prose. Everything else doesn't:
-      // annotating a checklist's source would show the contributor `- [x]`
-      // markers they never typed.
-      if (b.kind !== 'prose' && b.kind !== 'title') return b.text + b.trail
-      return annotate(stripTrail(b.raw), b.text) + b.trail
-    })
-    .join('\n')
+  const pieces = blocks.map((b) => {
+    if (!b.edited || b.text + b.trail === b.raw) return b.raw
+    // Page setup changes only alongside a section (the `Checklist` import a
+    // new checklist needs), so it isn't a change of its own to jump to.
+    if (b.kind !== 'managed') changedBlocks++
+    // Prose and the page title read as prose. Everything else doesn't:
+    // annotating a checklist's source would show the contributor `- [x]`
+    // markers they never typed.
+    if (b.kind !== 'prose' && b.kind !== 'title') return b.text + b.trail
+    return annotate(stripTrail(b.raw), b.text) + b.trail
+  })
 
-  return { body, changedBlocks }
+  return { body: pieces.join('\n'), changedBlocks, pieces }
+}
+
+/* ------------------------------------------------------------------ *
+ * changes only
+ * ------------------------------------------------------------------ */
+
+/** A gap of unchanged sections, as a line `segmentBody` turns into a button. */
+export const GAP_RE = /^<!--fw-gap (\d+) (\d+)-->$/
+
+const isChanged = (b: Block) => b.edited && b.text + b.trail !== b.raw && b.kind !== 'managed'
+const HEADING_LINE_RE = /^\s{0,3}#{1,6}\s/
+
+/**
+ * The page with only its changed sections, the way a pull request opens on its
+ * changes: on a long page a one-line fix was hard to find among everything
+ * else. A section is what the editor edits as one (a heading and what follows
+ * it), and a component like a checklist or a collapsible section counts as one
+ * whole, so it still renders as itself. A changed section that doesn't start
+ * with a heading gets the heading it sits under, for where it is. The title
+ * always shows. What's left out becomes a gap, `<!--fw-gap id count-->`, which
+ * the preview draws as a row that opens it in place; `expanded` holds the ids
+ * opened so far.
+ */
+export function changesOnly(blocks: Block[], pieces: string[], expanded: Set<number>): string {
+  // Top-level groups: a block, or a component from its opening tag to its close.
+  const groups: [number, number][] = []
+  for (let i = 0, depth = 0, start = 0; i < blocks.length; i++) {
+    if (depth === 0) start = i
+    if (blocks[i].kind === 'frameOpen') depth++
+    if (blocks[i].kind === 'frameClose') depth--
+    if (depth === 0) groups.push([start, i + 1])
+  }
+  const text = ([a, b]: [number, number]) => pieces.slice(a, b).join('\n')
+  const shown = groups.map(
+    ([a, b]) => blocks.slice(a, b).some((x) => isChanged(x) || x.kind === 'title'),
+  )
+  // Sections a reader would count: not blank lines, comments or page setup.
+  const counts = (g: [number, number]) =>
+    blocks.slice(g[0], g[1]).some((x) => x.kind === 'prose' || x.kind === 'raw' || x.kind === 'frameOpen')
+
+  const parts: string[] = []
+  let gap: [number, number][] = []
+  let gapId = 0
+  let heading: { line: string; group: number } | null = null
+  const flushGap = () => {
+    if (!gap.length) return
+    const n = gap.filter(counts).length
+    if (n > 0) {
+      const id = gapId++
+      if (expanded.has(id)) parts.push(...gap.map(text))
+      else parts.push(`<!--fw-gap ${id} ${n}-->`)
+    }
+    gap = []
+  }
+
+  groups.forEach((g, gi) => {
+    const own = text(g)
+    if (shown[gi]) {
+      flushGap()
+      const first = own.split('\n').find((l) => l.trim()) ?? ''
+      if (heading && !HEADING_LINE_RE.test(first) && !shown[heading.group]) parts.push(heading.line)
+      parts.push(own)
+    } else {
+      gap.push(g)
+    }
+    for (const x of blocks.slice(g[0], g[1])) {
+      if (x.kind !== 'prose') continue
+      const hs = headingsIn(x.raw)
+      const h = hs[hs.length - 1]
+      if (h) heading = { line: `${'#'.repeat(h.level)} ${h.text}`, group: gi }
+    }
+  })
+  flushGap()
+  return parts.join('\n\n')
 }
 
 const stripTrail = (s: string) => s.replace(/\s+$/, '')
@@ -265,7 +342,9 @@ function markLine(line: string, kind: 'ins' | 'del'): string {
   return `${m[1]}<${tag} class="${cls}">${esc(m[2])}</${tag}>`
 }
 
-// Table rows can't carry inline HTML without breaking the table.
+// Table rows can't carry inline HTML without breaking the table. Nor can a
+// component's tag on its own line, like the `<Checklist id="…">` box a new
+// checklist gets: marked up, it would show as text instead of being the box.
 function unsafe(text: string): boolean {
-  return text.split('\n').some((l) => /^\s*\|/.test(l))
+  return text.split('\n').some((l) => /^\s*\|/.test(l) || /^\s*<\/?[A-Z][\w.]*[\s>/]/.test(l))
 }

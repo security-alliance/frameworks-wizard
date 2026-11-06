@@ -12,16 +12,20 @@
 //
 // The step ids (`edit`, `review`) are internal and don't follow the labels.
 //
+// There is no sign-in step. Signing in is only needed to send, so it happens
+// on Send, where the button that needs it is (see `SendPanel`). As a step of
+// its own it could be skipped, so it was a wall that wasn't one, and it put a
+// tick beside "not signed in".
+//
 // The `sub` lines are fallbacks. Where the wizard knows something true about a
-// step — who you signed in as, which page you picked, how many sections you
-// changed — the stepper shows that instead. See `Stepper`.
+// step — which page you picked, how many sections you changed — the stepper
+// shows that instead. See `Stepper`.
 
 /** The steps, by id. Typing these as a union means a mistyped `step.id ===`
  *  comparison is a compile error rather than a branch that silently never
  *  runs. */
 export type StepId =
   | 'welcome'
-  | 'connect'
   | 'choose'
   | 'edit'
   | 'review'
@@ -36,14 +40,16 @@ export interface Step {
    *  `?page=…`. The steps without it read the same whichever page is selected,
    *  and carrying the parameter there only made the address bar noisy. */
   page?: boolean
+  /** The forward button's label: where it goes, rather than "Continue" on
+   *  every step. Welcome and Send have their own buttons, and Done has none. */
+  next?: string
 }
 
 export const STEPS: Step[] = [
   { id: 'welcome', label: 'Start', sub: 'What this does' },
-  { id: 'connect', label: 'Sign in', sub: 'So you get credit' },
-  { id: 'choose', label: 'Choose', sub: 'Pick a page', page: true },
-  { id: 'edit', label: 'Write', sub: 'Make your changes', page: true },
-  { id: 'review', label: 'Check', sub: 'Read it back', page: true },
+  { id: 'choose', label: 'Choose', sub: 'Pick a page', page: true, next: 'Start writing' },
+  { id: 'edit', label: 'Write', sub: 'Make your changes', page: true, next: 'Read it back' },
+  { id: 'review', label: 'Check', sub: 'Read it back', page: true, next: 'Ready to send' },
   { id: 'submit', label: 'Send', sub: 'Submit for review', page: true },
   { id: 'done', label: 'Done', sub: 'All set' },
 ]

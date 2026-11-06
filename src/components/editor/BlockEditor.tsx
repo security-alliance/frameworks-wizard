@@ -4,6 +4,8 @@ import { FRAME_LABELS, frameField, withFrameField } from '../../lib/blocks.js'
 import type { ReactNode } from 'react'
 import type { Editor } from '@tiptap/react'
 import type { Block } from '../../lib/types.js'
+import type { PageContext } from '../../lib/tiptapConfig.js'
+import { headingsIn } from '../../lib/headings.js'
 
 // The editing surface: the page as a document, one block per section.
 //
@@ -17,16 +19,20 @@ export default function BlockEditor({
   onChangeBlock,
   focus,
   onFocusEditor,
+  intro,
 }: {
   blocks: Block[]
   /** The page's hard-wrap width, from `wrapWidth`. */
   wrap: number
+  /** Shown above the first section, in the same column. */
+  intro?: ReactNode
   onChangeBlock: (id: string, text: string) => void
   /** Focus mode. The measure grows with the card, so the column doesn't sit in
    *  the middle of a wider box with new gutters on either side of it. */
   focus: boolean
   onFocusEditor: (editor: Editor) => void
 }) {
+  const contexts = pageContexts(blocks)
   const render = (nodes: Node[]) =>
     nodes.map((node, i) =>
       'frame' in node ? (
@@ -43,6 +49,7 @@ export default function BlockEditor({
           key={node.block.id}
           block={node.block}
           wrap={wrap}
+          context={contexts.get(node.block.id)!}
           onChange={onChangeBlock}
           onFocusEditor={onFocusEditor}
         />
@@ -55,6 +62,7 @@ export default function BlockEditor({
         focus ? 'max-w-216' : 'max-w-3xl'
       }`}
     >
+      {intro}
       {render(toTree(blocks))}
     </div>
   )
@@ -97,14 +105,44 @@ function leadsIn(prev: Node | undefined): boolean {
   return /^\s*(?:[-*+]|\d+[.)])\s/.test(last)
 }
 
+// Components that are already a checklist: a list added inside one is part of
+// it and needs no box of its own.
+const CHECKLIST_FRAMES = new Set(['Checklist', 'GovernanceChecklistItem'])
+const CHECKLIST_ID_RE = /<Checklist\s[^>]*\bid="([^"]+)"/g
+
+/**
+ * What each section needs to know about the page around it (see
+ * `PageContext`): the heading above it, and the checklist ids used anywhere
+ * else, from the page as it is now, edits included.
+ */
+function pageContexts(blocks: Block[]): Map<string, PageContext> {
+  const ids = blocks.map((b) => [...b.text.matchAll(CHECKLIST_ID_RE)].map((m) => m[1]))
+  const out = new Map<string, PageContext>()
+  let headingAbove: PageContext['headingAbove'] = null
+  blocks.forEach((b, i) => {
+    out.set(b.id, {
+      boxChecklists: !(b.inside && CHECKLIST_FRAMES.has(b.inside)),
+      headingAbove,
+      usedIds: ids.flatMap((list, j) => (j === i ? [] : list)),
+    })
+    if (b.kind === 'prose' || b.kind === 'title') {
+      const hs = headingsIn(b.text)
+      if (hs.length) headingAbove = hs[hs.length - 1]
+    }
+  })
+  return out
+}
+
 function BlockView({
   block,
   wrap,
+  context,
   onChange,
   onFocusEditor,
 }: {
   block: Block
   wrap: number
+  context: PageContext
   onChange: (id: string, text: string) => void
   onFocusEditor: (editor: Editor) => void
 }) {
@@ -121,7 +159,13 @@ function BlockView({
       return <TitleBlock block={block} onChange={onChange} />
     case 'prose':
       return (
-        <ProseBlock block={block} wrap={wrap} onChange={onChange} onFocusEditor={onFocusEditor} />
+        <ProseBlock
+          block={block}
+          wrap={wrap}
+          context={context}
+          onChange={onChange}
+          onFocusEditor={onFocusEditor}
+        />
       )
     case 'managed':
     case 'raw':
@@ -154,7 +198,7 @@ function Frame({
         draftOnly ? 'border-dashed border-fw-border' : 'border-fw-border-soft'
       } ${underBullet ? 'ml-8 -mt-2' : ''}`}
     >
-      <div className="mb-1 px-2 text-[11px] font-semibold uppercase tracking-wide text-fw-faint">
+      <div className="mb-1 px-2 text-[0.6875rem] font-semibold uppercase tracking-wide text-fw-faint">
         {FRAME_LABELS[name] ?? name}
       </div>
       {field && (
@@ -164,7 +208,7 @@ function Frame({
             value={field.value}
             onChange={(e) => onChange(open.id, withFrameField(open, e.target.value))}
             placeholder={field.label}
-            className="w-full rounded-lg border border-transparent bg-transparent px-1.5 py-1 text-[15px] font-semibold text-fw-strong hover:border-fw-border focus:border-brand focus:outline-none"
+            className="w-full rounded-lg border border-transparent bg-transparent px-1.5 py-1 text-[0.9375rem] font-semibold text-fw-strong hover:border-fw-border focus:border-brand focus:outline-none"
           />
         </label>
       )}

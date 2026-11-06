@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Preview from '../components/Preview.js'
 import DiffView from '../components/DiffView.js'
-import { Card, ChevronDown } from '../components/ui.js'
-import { annotateBlocks } from '../lib/inlineDiff.js'
+import { ArrowDown, Card, ChevronDown } from '../components/ui.js'
+import { annotateBlocks, changesOnly } from '../lib/inlineDiff.js'
 import { joinBlocks } from '../lib/blocks.js'
+import { headingSkips } from '../lib/headings.js'
 import type { Block, ContributorDirectory, Frontmatter } from '../lib/types.js'
 
 // Step: review changes.
@@ -30,8 +31,20 @@ export default function ReviewStep({
   const previewRef = useRef<HTMLDivElement>(null)
   const stop = useRef(0)
 
-  const { body, changedBlocks } = useMemo(() => annotateBlocks(blocks), [blocks])
+  const { body, changedBlocks, pieces } = useMemo(() => annotateBlocks(blocks), [blocks])
+
+  // Opens on the changes alone, the way a pull request does; the whole page is
+  // one click away, and so is each run of unchanged sections in between. With
+  // nothing changed yet there's nothing to narrow down to, so it's the page.
+  const [wholePage, setWholePage] = useState(false)
+  const [expanded, setExpanded] = useState<Set<number>>(new Set())
+  const changesView = dirty && !wholePage
+  const shownBody = useMemo(
+    () => (changesView ? changesOnly(blocks, pieces, expanded) : body),
+    [changesView, blocks, pieces, expanded, body],
+  )
   const editedBody = useMemo(() => joinBlocks(blocks), [blocks])
+  const skips = useMemo(() => headingSkips(editedBody), [editedBody])
 
   // On a long page a one-word fix is invisible until you find it, so the count
   // is the control that takes you there — and takes you to the next one on each
@@ -77,12 +90,37 @@ export default function ReviewStep({
               : 'You haven’t changed anything yet.'}
           </p>
         </div>
+        <div className="flex shrink-0 items-center gap-2">
+        {dirty && !technical && (
+          <div role="group" aria-label="What to show" className="flex rounded-full bg-fw-surface-2 p-0.5 text-xs font-medium">
+            {[
+              { whole: false, label: 'Changes only' },
+              { whole: true, label: 'Whole page' },
+            ].map((o) => (
+              <button
+                key={o.label}
+                type="button"
+                aria-pressed={wholePage === o.whole}
+                onClick={() => {
+                  setWholePage(o.whole)
+                  setExpanded(new Set())
+                  stop.current = 0
+                }}
+                className={`rounded-full px-2.5 py-1 transition-colors ${
+                  wholePage === o.whole ? 'bg-fw-surface text-fw-strong shadow-sm' : 'text-fw-muted hover:text-fw-text'
+                }`}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        )}
         <button
           type="button"
           onClick={handleCount}
           disabled={!dirty}
           title={dirty ? 'Jump to the next change' : undefined}
-          className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+          className={`flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
             dirty
               ? 'bg-brand-soft text-brand-hover hover:bg-brand hover:text-white'
               : 'cursor-default bg-fw-surface-2 text-fw-faint'
@@ -91,18 +129,25 @@ export default function ReviewStep({
           {dirty
             ? `${changedBlocks} section${changedBlocks === 1 ? '' : 's'} changed`
             : 'No changes'}
+          {/* The arrow says it goes somewhere: each press scrolls to the next
+              change, which a count on its own doesn't suggest. */}
+          {dirty && <ArrowDown width={13} height={13} aria-hidden />}
         </button>
+        </div>
       </div>
+
+      {skips.length > 0 && <HeadingSkips skips={skips} />}
 
       <div className="min-h-0 flex-1 overflow-hidden bg-fw-bg">
         {technical ? (
           <DiffView original={originalBody} edited={editedBody} />
         ) : (
           <Preview
-            body={body}
+            body={shownBody}
             frontmatter={fm}
             contributors={contributors}
             scrollRef={previewRef}
+            onExpandGap={(id) => setExpanded((e) => new Set(e).add(id))}
           />
         )}
       </div>
@@ -115,6 +160,41 @@ export default function ReviewStep({
         {technical ? 'Back to the page view' : 'Technical view (line by line)'}
       </button>
     </Card>
+  )
+}
+
+const LEVEL_NAMES: Record<number, string> = {
+  1: 'the page title',
+  2: 'a heading',
+  3: 'a subheading',
+  4: 'a small heading',
+}
+const levelName = (n: number) => LEVEL_NAMES[n] ?? `a level ${n} heading`
+
+// A heading that skips a level. The edit step's menu won't make one, but it can
+// still happen, e.g. by turning a subheading into a heading above the small
+// headings that were under it. The docs' automatic check would fail the pull
+// request, so it's said here, while it's one step back to fix.
+function HeadingSkips({ skips }: { skips: ReturnType<typeof headingSkips> }) {
+  return (
+    <div className="border-b border-fw-border bg-brand-soft/50 px-5 py-2.5 text-[0.7813rem] leading-relaxed text-fw-text">
+      <p className="font-semibold text-fw-strong">
+        {skips.length === 1 ? 'A heading skips a level' : `${skips.length} headings skip a level`}
+      </p>
+      <ul className="mt-1 space-y-0.5 text-fw-muted">
+        {skips.map(({ heading, above }, i) => (
+          <li key={i}>
+            &ldquo;{heading.text}&rdquo; is {levelName(heading.level)} straight under{' '}
+            {levelName(above.level)}, &ldquo;{above.text}&rdquo;. Go back and make it{' '}
+            {levelName(above.level + 1)}.
+          </li>
+        ))}
+      </ul>
+      <p className="mt-1 text-fw-faint">
+        Headings go down one level at a time. The docs&apos; automatic check
+        fails a page that skips one.
+      </p>
+    </div>
   )
 }
 

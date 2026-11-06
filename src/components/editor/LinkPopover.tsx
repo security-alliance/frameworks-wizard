@@ -122,20 +122,20 @@ export default function LinkPopover({
     >
       {needsText && (
         <label className="mb-2.5 block">
-          <span className="text-[11px] font-semibold text-fw-muted">
+          <span className="text-[0.6875rem] font-semibold text-fw-muted">
             Text to show
           </span>
           <input
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder="OWASP cheat sheet"
-            className="mt-1 w-full rounded-lg border border-fw-border bg-fw-surface-2 px-2.5 py-1.5 text-[13px] text-fw-text placeholder:text-fw-faint focus:border-brand focus:outline-none"
+            className="mt-1 w-full rounded-lg border border-fw-border bg-fw-surface-2 px-2.5 py-1.5 text-[0.8125rem] text-fw-text placeholder:text-fw-faint focus:border-brand focus:outline-none"
           />
         </label>
       )}
 
       <label className="block">
-        <span className="text-[11px] font-semibold text-fw-muted">
+        <span className="text-[0.6875rem] font-semibold text-fw-muted">
           {existing ? 'Link address' : 'Links to'}
         </span>
         <input
@@ -148,7 +148,7 @@ export default function LinkPopover({
           placeholder="example.com/page"
           inputMode="url"
           aria-invalid={invalid}
-          className={`mt-1 w-full rounded-lg border bg-fw-surface-2 px-2.5 py-1.5 text-[13px] text-fw-text placeholder:text-fw-faint focus:outline-none ${
+          className={`mt-1 w-full rounded-lg border bg-fw-surface-2 px-2.5 py-1.5 text-[0.8125rem] text-fw-text placeholder:text-fw-faint focus:outline-none ${
             invalid
               ? 'border-red-500/70 focus:border-red-500'
               : 'border-fw-border focus:border-brand'
@@ -157,12 +157,12 @@ export default function LinkPopover({
       </label>
 
       {invalid ? (
-        <p className="mt-1.5 text-[11.5px] leading-relaxed text-red-400">
+        <p className="mt-1.5 text-[0.7188rem] leading-relaxed text-red-400">
           That doesn&apos;t look like a web address. Use something like
           example.com, or /ai-security/overview for another page on this site.
         </p>
       ) : (
-        <p className="mt-1.5 text-[11.5px] leading-relaxed text-fw-faint">
+        <p className="mt-1.5 text-[0.7188rem] leading-relaxed text-fw-faint">
           A full address, or a path like /ai-security/overview to link somewhere
           else on this site.
         </p>

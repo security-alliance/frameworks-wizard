@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   fetchPageList,
   fetchRawPage,
   splitFrontmatter,
   fetchContributors,
+  pageTrail,
+  toPageEntry,
 } from './lib/github.js'
 import { parseFrontmatter } from './lib/frontmatter.js'
-import { splitBlocks, updateBlock, isDirty } from './lib/blocks.js'
+import { splitBlocks, updateBlock, isDirty, syncChecklistImport } from './lib/blocks.js'
 import { wrapWidth } from './lib/markdown.js'
 import { annotateBlocks } from './lib/inlineDiff.js'
 import {
@@ -24,7 +26,6 @@ import { useTheme } from './lib/useTheme.js'
 import { useWizardRoute } from './lib/useWizardRoute.js'
 import { STEPS, stepIndex } from './wizard/steps.js'
 import type { StepId } from './wizard/steps.js'
-import { titleize } from './lib/format.js'
 import Stepper from './components/Stepper.js'
 import ScrollNav from './components/ScrollNav.js'
 import BrandBar from './components/BrandBar.js'
@@ -33,7 +34,6 @@ import WelcomeStep from './steps/WelcomeStep.js'
 import ChoosePageStep from './steps/ChoosePageStep.js'
 import EditStep from './steps/EditStep.js'
 import ReviewStep from './steps/ReviewStep.js'
-import { ConnectStep } from './steps/ConnectStep.js'
 import SubmitStep from './steps/SubmitStep.js'
 import DoneStep from './steps/DoneStep.js'
 import type { PrAnswers } from './lib/prTemplate.js'
@@ -141,7 +141,7 @@ export default function App() {
         const draft = readDraft(path)
         if (draft) {
           const r = applyDraft(fresh, draft)
-          setBlocks(r.blocks)
+          setBlocks(syncChecklistImport(r.blocks))
           setRestored({ applied: r.applied, skipped: r.skipped })
         } else {
           setBlocks(fresh)
@@ -189,6 +189,14 @@ export default function App() {
     [groups, path],
   )
 
+  // A draft's page by name, for the drafts menu. A draft can outlive its page in
+  // the sidebar, or be listed before the page list has loaded; those get the
+  // slugs made readable.
+  const pageLabel = useCallback(
+    (p: string) => pageTrail(groups.flatMap((g) => g.pages).find((e) => e.path === p) ?? toPageEntry(p)),
+    [groups],
+  )
+
   // What the stepper says under each label. Everything here is state the app
   // already holds, shown where you'd look while deciding whether to click back
   // a step.
@@ -199,10 +207,6 @@ export default function App() {
     const n = annotated.changedBlocks
     const sections = `${n} section${n === 1 ? '' : 's'}`
     return {
-      connect:
-        auth.status === 'in' && auth.user?.login
-          ? `@${auth.user.login}`
-          : 'not signed in',
       // Nothing until a page is genuinely on the table. `path` starts on
       // DEFAULT_PAGE so the editor has something to open for anyone who skips
       // the picker, but that is the app's fallback and not the contributor's
@@ -220,22 +224,24 @@ export default function App() {
       // "Overview" both before and after and the change would look like a no-op.
       choose:
         (chosen || stepIdx >= stepIndex('choose')) && current
-          ? `${titleize(current.framework)} › ${titleize(current.name)}`
+          ? `${current.frameworkTitle} › ${current.title}`
           : undefined,
       edit: dirty ? `${sections} changed` : 'nothing changed yet',
       review: dirty ? `${sections} to read back` : 'nothing to check',
       // "Ready to send" waits for the note too: it's the one thing the step
-      // actually asks for.
+      // actually asks for. Signed out, with the note written, signing in is
+      // what's left, and it happens on that step.
       submit: !dirty
         ? 'nothing to send yet'
-        : note.trim()
-          ? 'ready to send'
-          : 'needs a note',
+        : !note.trim()
+          ? 'needs a note'
+          : auth.status === 'out'
+            ? 'sign in to send'
+            : 'ready to send',
       done: sent ? `#${sent.number} sent` : undefined,
     }
   }, [
     auth.status,
-    auth.user?.login,
     chosen,
     stepIdx,
     current,
@@ -251,7 +257,7 @@ export default function App() {
   }
 
   function changeBlock(id: string, text: string) {
-    setBlocks((bs) => updateBlock(bs, id, text))
+    setBlocks((bs) => syncChecklistImport(updateBlock(bs, id, text)))
   }
 
   // Undoing every change takes the note with it, the same way `saveDraft` does:
@@ -367,6 +373,7 @@ export default function App() {
         minimal={focused}
         drafts={drafts}
         currentPath={path}
+        pageLabel={pageLabel}
         onOpenDraft={openDraft}
         onDiscardDraft={discardDraft}
       />
@@ -388,7 +395,6 @@ export default function App() {
 
         <main>
           {step.id === 'welcome' && <WelcomeStep onNext={next} />}
-          {step.id === 'connect' && <ConnectStep auth={auth} authError={authError} />}
           {step.id === 'choose' && (
             <ChoosePageStep
               groups={groups}
@@ -433,6 +439,7 @@ export default function App() {
               fm={fm}
               contributorData={contributors}
               auth={auth}
+              authError={authError}
               justInstalled={justInstalled}
               blocks={blocks}
               originalBody={originalBody}
@@ -470,7 +477,7 @@ export default function App() {
                 <span className="w-23" /> // spacer to keep "Back" left-aligned
               ) : (
                 <Button onClick={next}>
-                  Continue <ArrowRight />
+                  {step.next ?? 'Continue'} <ArrowRight />
                 </Button>
               )}
             </div>

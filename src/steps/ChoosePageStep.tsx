@@ -38,9 +38,11 @@ export default function ChoosePageStep({
     if (!q) return []
     return groups
       .flatMap((g) => g.pages)
+      // The names people read, and the slugs too: a URL they half remember
+      // ("isolation") is as good a way in as the title.
       .filter((p) =>
-        [p.name, p.framework, ...p.subdir].some((s) =>
-          titleize(s).toLowerCase().includes(q),
+        [p.title, p.frameworkTitle, ...p.subdirTitles, p.name, p.framework, ...p.subdir].some((s) =>
+          s.toLowerCase().includes(q) || titleize(s).toLowerCase().includes(q),
         ),
       )
       .slice(0, 60)
@@ -90,7 +92,7 @@ export default function ChoosePageStep({
                         : 'text-fw-muted hover:bg-fw-surface-2 hover:text-fw-text'
                     }`}
                   >
-                    <span className="truncate">{titleize(g.framework)}</span>
+                    <span className="truncate">{g.title}</span>
                     {active && (
                       <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand" />
                     )}
@@ -109,7 +111,7 @@ export default function ChoosePageStep({
               segments.map((seg) => (
                 <div key={seg.key || '_root'} className="mb-1">
                   {seg.label && (
-                    <div className="px-5 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide text-fw-faint">
+                    <div className="px-5 pb-1 pt-3 text-[0.6875rem] font-semibold uppercase tracking-wide text-fw-faint">
                       {seg.label}
                     </div>
                   )}
@@ -157,7 +159,7 @@ function SearchResults({
           page={p}
           active={p.path === path}
           onPick={onPickPage}
-          context={[p.framework, ...p.subdir].map(titleize).join(' › ')}
+          context={[p.frameworkTitle, ...p.subdirTitles].join(' › ')}
         />
       ))}
     </div>
@@ -189,7 +191,7 @@ function PageRow({
           active ? 'bg-brand' : 'bg-transparent'
         }`}
       />
-      <span className="truncate">{titleize(page.name)}</span>
+      <span className="truncate">{page.title}</span>
       {context && (
         <span className="ml-auto shrink-0 truncate pl-3 text-xs text-fw-faint">
           {context}

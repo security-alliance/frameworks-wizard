@@ -40,7 +40,7 @@ export default function DiffView({
           −{removed}
         </span>
       </div>
-      <table className="w-full border-collapse font-mono text-[12.5px] leading-relaxed">
+      <table className="w-full border-collapse font-mono text-[0.7813rem] leading-relaxed">
         <tbody>
           {rows.map((row, idx) => (
             <Row key={idx} row={row} />
@@ -55,7 +55,7 @@ function Row({ row }: { row: DiffRow }) {
   if (row.type === 'gap') {
     return (
       <tr className="select-none">
-        <td colSpan={3} className="bg-fw-surface-2/30 px-4 py-1 text-center text-[11px] text-fw-faint">
+        <td colSpan={3} className="bg-fw-surface-2/30 px-4 py-1 text-center text-[0.6875rem] text-fw-faint">
           ⋯ {row.count} unchanged line{row.count === 1 ? '' : 's'}
         </td>
       </tr>
@@ -71,10 +71,10 @@ function Row({ row }: { row: DiffRow }) {
 
   return (
     <tr className={style.row}>
-      <td className="w-10 select-none border-r border-fw-border-soft px-2 text-right text-[11px] text-fw-faint">
+      <td className="w-10 select-none border-r border-fw-border-soft px-2 text-right text-[0.6875rem] text-fw-faint">
         {'oldLn' in row ? row.oldLn : ''}
       </td>
-      <td className="w-10 select-none border-r border-fw-border-soft px-2 text-right text-[11px] text-fw-faint">
+      <td className="w-10 select-none border-r border-fw-border-soft px-2 text-right text-[0.6875rem] text-fw-faint">
         {'newLn' in row ? row.newLn : ''}
       </td>
       <td className={`whitespace-pre-wrap wrap-break-word px-3 ${style.text}`}>

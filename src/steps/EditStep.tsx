@@ -1,13 +1,14 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import BlockEditor from '../components/editor/BlockEditor.js'
+import HelpPanel from '../components/editor/HelpPanel.js'
 import Toolbar from '../components/editor/Toolbar.js'
 import {
   Card,
   ExternalIcon,
   FocusIcon,
   ExitFocusIcon,
+  PencilIcon,
 } from '../components/ui.js'
-import { titleize } from '../lib/format.js'
 import type { Editor } from '@tiptap/react'
 import type { Block, PageEntry } from '../lib/types.js'
 import type { ReactNode } from 'react'
@@ -74,8 +75,28 @@ export default function EditStep({
 
   const width = focus ? 'max-w-248' : 'max-w-4xl'
 
+  // Formatting help sits outside the card, to its right, where there's room
+  // for both (card + gap + 320px panel): the writing column keeps its width and
+  // nothing covers it. The pair is centred, so the card moves left as it opens,
+  // and the negative margin lets the pair spill past the app's column by the
+  // panel's share. That needs xl, or 1720px for the wider focus-mode card: the
+  // wizard scales up with the window (see `html` in index.css), and between
+  // 1280px and 1600px the normal card and panel grow in step with it, but the
+  // focus-mode pair only fits once the scaling has stopped. Below
+  // it there's no room beside the card, and it floats over the page under the
+  // toolbar instead (anchored to the sticky header, so it's on screen wherever
+  // the page is scrolled to), capped at the screen's height with its own scroll.
+  const [helpOpen, setHelpOpen] = useState(false)
+  const helpId = useId()
+  const toggleHelp = () => setHelpOpen((o) => !o)
+  const closeHelp = () => setHelpOpen(false)
+  const side = focus
+    ? { row: 'min-[1720px]:-mx-[6.5rem] min-[1720px]:flex min-[1720px]:items-start min-[1720px]:justify-center min-[1720px]:gap-4', out: 'hidden min-[1720px]:block', in: 'min-[1720px]:hidden' }
+    : { row: 'xl:-mx-14 xl:flex xl:items-start xl:justify-center xl:gap-4', out: 'hidden xl:block', in: 'xl:hidden' }
+
   return (
-    <>
+    <div className={helpOpen ? side.row : ''}>
+      <div className="w-full min-w-0">
       {/* Above the card, not inside it. Tucked under the sticky header among
           the toolbar and the page name it would read as more editor furniture,
           which is exactly what the eye skips on the way to the text. */}
@@ -122,7 +143,7 @@ export default function EditStep({
                 >
                   <ExitFocusIcon />
                   Exit focus
-                  <kbd className="ml-0.5 rounded border border-fw-border bg-fw-surface-2 px-1 font-mono text-[10px] text-fw-faint">
+                  <kbd className="ml-0.5 rounded border border-fw-border bg-fw-surface-2 px-1 font-mono text-[0.625rem] text-fw-faint">
                     Esc
                   </kbd>
                 </button>
@@ -151,7 +172,21 @@ export default function EditStep({
             </div>
           </div>
 
-          {!loading && !error && <Toolbar editor={activeEditor} />}
+          {!loading && !error && (
+            <Toolbar
+              editor={activeEditor}
+              helpOpen={helpOpen}
+              helpIds={`${helpId}-out ${helpId}-in`}
+              onToggleHelp={toggleHelp}
+            />
+          )}
+          {helpOpen && (
+            <HelpPanel
+              id={`${helpId}-in`}
+              onClose={closeHelp}
+              className={`fw-card-shadow absolute right-3 top-full z-30 mt-1.5 max-h-[calc(100vh-9rem)] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-fw-border bg-fw-surface p-4 ${side.in}`}
+            />
+          )}
         </div>
 
         {error ? (
@@ -168,10 +203,62 @@ export default function EditStep({
             onChangeBlock={onChangeBlock}
             focus={focus}
             onFocusEditor={setActiveEditor}
+            intro={!focus && <EditTip />}
           />
         )}
       </Card>
-    </>
+      </div>
+      {helpOpen && (
+        <HelpPanel
+          id={`${helpId}-out`}
+          onClose={closeHelp}
+          className={`fw-card-shadow w-80 shrink-0 rounded-2xl border border-fw-border bg-fw-surface p-5 xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto ${side.out}`}
+        />
+      )}
+    </div>
+  )
+}
+
+// How the editor works, said once. Someone arriving from the picker sees a page,
+// and nothing says they can just click into it and type, or what the grey boxes
+// are. Dismissed for good with "Got it", in this browser. Storage can be off
+// (private browsing): the tip then simply comes back next time.
+const TIP_KEY = 'fw-edit-tip-dismissed'
+
+function EditTip() {
+  const [dismissed, setDismissed] = useState(() => {
+    try {
+      return localStorage.getItem(TIP_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
+  if (dismissed) return null
+
+  function dismiss() {
+    setDismissed(true)
+    try {
+      localStorage.setItem(TIP_KEY, '1')
+    } catch {
+      /* shown again next visit, which is all it costs */
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-brand/30 bg-brand-soft/50 px-4 py-3">
+      <PencilIcon width={16} height={16} className="shrink-0 text-brand-hover" />
+      <p className="min-w-0 flex-1 text-[0.8125rem] leading-relaxed text-fw-text">
+        Click any paragraph and start typing. Grey boxes are added for you and
+        stay as they are.
+      </p>
+      <button
+        type="button"
+        onClick={dismiss}
+        className="shrink-0 rounded-md px-2 py-1 text-xs font-semibold text-brand-hover hover:bg-fw-surface-2"
+      >
+        Got it
+      </button>
+    </div>
   )
 }
 
@@ -198,7 +285,7 @@ function DraftNotice({
   if (!persisted) {
     return (
       <div className={className}>
-        <div className="rounded-xl border border-fw-border bg-fw-surface-2/60 px-4 py-2.5 text-[12.5px] leading-relaxed text-fw-muted">
+        <div className="rounded-xl border border-fw-border bg-fw-surface-2/60 px-4 py-2.5 text-[0.7813rem] leading-relaxed text-fw-muted">
           This browser won&apos;t let us keep a draft, usually because of
           private browsing. Your changes are safe while this tab is open, but
           they won&apos;t survive a reload.
@@ -216,10 +303,10 @@ function DraftNotice({
     return (
       <div className={className}>
         <div className="rounded-xl border border-brand/40 bg-brand-soft px-4 py-3">
-          <p className="text-[13px] font-semibold text-fw-strong">
+          <p className="text-[0.8125rem] font-semibold text-fw-strong">
             Your saved changes don&apos;t fit this page any more
           </p>
-          <p className="mt-1 text-[12.5px] leading-relaxed text-fw-muted">
+          <p className="mt-1 text-[0.7813rem] leading-relaxed text-fw-muted">
             The {restored.skipped} section{restored.skipped === 1 ? '' : 's'} you
             edited {restored.skipped === 1 ? 'has' : 'have'} since changed in the
             repository, so putting your text back could have dropped it in the
@@ -240,7 +327,7 @@ function DraftNotice({
   return (
     <div className={className}>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-brand/30 bg-brand-soft/50 px-4 py-2.5">
-        <p className="min-w-0 flex-1 text-[12.5px] leading-relaxed text-fw-text">
+        <p className="min-w-0 flex-1 text-[0.7813rem] leading-relaxed text-fw-text">
           <span className="font-semibold text-fw-strong">
             Picked up where you left off.
           </span>{' '}
@@ -275,10 +362,10 @@ function PageIdentity({ current }: { current?: PageEntry }) {
   return (
     <div className="min-w-0">
       <h2 className="truncate text-sm font-semibold text-fw-strong">
-        {titleize(current.name)}
+        {current.title}
       </h2>
-      <p className="truncate text-[11px] text-fw-faint">
-        {[current.framework, ...current.subdir].map(titleize).join(' › ')} · nothing is
+      <p className="truncate text-[0.6875rem] text-fw-faint">
+        {[current.frameworkTitle, ...current.subdirTitles].join(' › ')} · nothing is
         published until we review it
       </p>
     </div>

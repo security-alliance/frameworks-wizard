@@ -52,16 +52,19 @@ export default function WelcomeStep({ onNext }: { onNext: () => void }) {
         </div>
       </Card>
 
+      {/* Two cards: how long it takes, ending on the button (the moment the
+          timing has answered "is this worth it" is the moment to act), then
+          the questions. A button in a card of its own was a third box saying
+          less than either. */}
       <aside className="flex w-full flex-col gap-4 lg:sticky lg:top-20">
         <Card className="px-5 py-5">
           <MiniPath />
+          <div className="mt-4">
+            <StartCta onNext={onNext} size="sm" footnote={false} />
+          </div>
         </Card>
 
         <WelcomeFaq limit={3} />
-
-        <Card className="px-5 py-4">
-          <StartCta onNext={onNext} size="sm" footnote={false} />
-        </Card>
       </aside>
     </div>
   )

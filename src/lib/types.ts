@@ -81,10 +81,19 @@ export interface PageEntry {
   subdir: string[]
   /** File name without its extension. */
   name: string
+  /** The page's name as the site's sidebar shows it: "AI Workflows:
+   *  Developers vs Non-Developers", not the slug. */
+  title: string
+  /** The framework's name, likewise: "DPRK IT Workers". */
+  frameworkTitle: string
+  /** The names of the folders in `subdir`, in order. */
+  subdirTitles: string[]
 }
 
 export interface FrameworkGroup {
   framework: string
+  /** As the sidebar shows it. */
+  title: string
   pages: PageEntry[]
 }
 

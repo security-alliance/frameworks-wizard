@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, PencilIcon, TrashIcon } from './ui.js'
-import { titleize } from '../lib/format.js'
 import type { DraftSummary } from '../lib/drafts.js'
 
 // Unfinished work, from anywhere in the wizard.
@@ -16,11 +15,14 @@ import type { DraftSummary } from '../lib/drafts.js'
 export default function DraftsMenu({
   drafts,
   currentPath,
+  pageLabel,
   onOpen,
   onDiscard,
 }: {
   drafts: DraftSummary[]
   currentPath: string
+  /** `docs/pages/ai-security/overview.mdx` → `AI Security › Overview`. */
+  pageLabel: (path: string) => string
   onOpen: (path: string) => void
   onDiscard: (path: string) => void
 }) {
@@ -64,10 +66,10 @@ export default function DraftsMenu({
           className="fw-card-shadow absolute right-0 z-50 mt-2 w-72 overflow-hidden rounded-xl border border-fw-border bg-fw-surface"
         >
           <div className="border-b border-fw-border px-4 py-2.5">
-            <p className="text-[13px] font-semibold text-fw-strong">
+            <p className="text-[0.8125rem] font-semibold text-fw-strong">
               Unfinished changes
             </p>
-            <p className="mt-0.5 text-[11.5px] leading-relaxed text-fw-faint">
+            <p className="mt-0.5 text-[0.7188rem] leading-relaxed text-fw-faint">
               Kept in this browser. Nothing has been sent.
             </p>
           </div>
@@ -85,15 +87,15 @@ export default function DraftsMenu({
                   }}
                   className="min-w-0 flex-1 rounded-md px-1 py-0.5 text-left hover:bg-fw-surface-2"
                 >
-                  <span className="block truncate text-[12.5px] font-medium text-fw-text">
+                  <span className="block truncate text-[0.7813rem] font-medium text-fw-text">
                     {pageLabel(d.path)}
                     {d.path === currentPath && (
-                      <span className="ml-1.5 text-[11px] font-normal text-fw-faint">
+                      <span className="ml-1.5 text-[0.6875rem] font-normal text-fw-faint">
                         · open
                       </span>
                     )}
                   </span>
-                  <span className="block text-[11px] text-fw-faint">
+                  <span className="block text-[0.6875rem] text-fw-faint">
                     {d.edits} section{d.edits === 1 ? '' : 's'} ·{' '}
                     {relativeTime(d.savedAt)}
                   </span>
@@ -113,16 +115,6 @@ export default function DraftsMenu({
       )}
     </div>
   )
-}
-
-/** `docs/pages/ai-security/overview.mdx` → `AI Security › Overview`. */
-function pageLabel(path: string): string {
-  return path
-    .replace(/^docs\/pages\//, '')
-    .replace(/\.mdx$/, '')
-    .split('/')
-    .map(titleize)
-    .join(' › ')
 }
 
 /** Enough to recognise a draft by. */

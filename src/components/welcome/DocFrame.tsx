@@ -21,13 +21,13 @@ export default function DocFrame({
 }) {
   return (
     <div className="rounded-lg border border-fw-border bg-fw-surface px-4 py-3.5 sm:px-5">
-      <div className="text-[13px] font-semibold text-fw-strong">Key management</div>
+      <div className="text-[0.8125rem] font-semibold text-fw-strong">Key management</div>
       <div className="mt-3 space-y-2">
         <span className="block h-2 w-full rounded-full bg-fw-surface-2" />
         <span className="block h-2 w-4/5 rounded-full bg-fw-surface-2" />
       </div>
 
-      <p className="mt-4 text-[13.5px] leading-relaxed text-fw-text">
+      <p className="mt-4 text-[0.8438rem] leading-relaxed text-fw-text">
         {diff ? (
           <>
             {SAMPLE_ORIGINAL}
@@ -49,7 +49,7 @@ export default function DocFrame({
         <span className="block h-2 w-2/3 rounded-full bg-fw-surface-2" />
       </div>
 
-      <div className="mt-4 border-t border-fw-border-soft pt-2.5 text-[11px] text-fw-faint">
+      <div className="mt-4 border-t border-fw-border-soft pt-2.5 text-[0.6875rem] text-fw-faint">
         {diff
           ? '1 section changed · nothing else touched'
           : 'docs/pages/ai-security/overview.mdx'}
