@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef } from 'react'
 import ProseBlock from './ProseBlock.js'
 import LockedBlock from './LockedBlock.js'
 import { FRAME_LABELS, frameField, withFrameField } from '../../lib/blocks.js'
@@ -58,7 +59,7 @@ export default function BlockEditor({
 
   return (
     <div
-      className={`mx-auto w-full space-y-4 px-5 py-8 transition-[max-width] duration-300 ease-out motion-reduce:transition-none sm:px-8 ${
+      className={`mx-auto w-full space-y-4 px-4 py-6 sm:py-8 transition-[max-width] duration-300 ease-out motion-reduce:transition-none sm:px-8 ${
         focus ? 'max-w-216' : 'max-w-3xl'
       }`}
     >
@@ -196,7 +197,7 @@ function Frame({
       aria-label={FRAME_LABELS[name] ?? name}
       className={`rounded-xl border bg-fw-surface-2/30 px-3 pb-2 pt-3 ${
         draftOnly ? 'border-dashed border-fw-border' : 'border-fw-border-soft'
-      } ${underBullet ? 'ml-8 -mt-2' : ''}`}
+      } ${underBullet ? 'ml-4 -mt-2 sm:ml-8' : ''}`}
     >
       <div className="mb-1 px-2 text-[0.6875rem] font-semibold uppercase tracking-wide text-fw-faint">
         {FRAME_LABELS[name] ?? name}
@@ -226,12 +227,30 @@ function TitleBlock({
   onChange: (id: string, text: string) => void
 }) {
   const value = block.text.replace(/^\s*#\s+/, '')
+  // A textarea that grows with its text rather than an input: on a phone a
+  // long title was cut off mid-word ("Front-End Web Applic"). It is still one
+  // line in the file, so Enter is swallowed and pasted line breaks flattened.
+  const ref = useRef<HTMLTextAreaElement>(null)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const fit = () => {
+      el.style.height = 'auto'
+      el.style.height = `${el.scrollHeight}px`
+    }
+    fit()
+    window.addEventListener('resize', fit)
+    return () => window.removeEventListener('resize', fit)
+  }, [value])
   return (
-    <input
+    <textarea
+      ref={ref}
+      rows={1}
       value={value}
-      onChange={(e) => onChange(block.id, `# ${e.target.value}`)}
+      onChange={(e) => onChange(block.id, `# ${e.target.value.replace(/\s*\n\s*/g, ' ')}`)}
+      onKeyDown={(e) => e.key === 'Enter' && e.preventDefault()}
       aria-label="Page title"
-      className="w-full rounded-lg border border-transparent bg-transparent px-2 py-1 text-3xl font-bold tracking-tight text-fw-strong hover:border-fw-border focus:border-brand focus:outline-none"
+      className="block w-full resize-none overflow-hidden rounded-lg border border-transparent bg-transparent px-2 py-1 text-2xl leading-tight font-bold tracking-tight text-fw-strong hover:border-fw-border focus:border-brand focus:outline-none sm:text-3xl"
     />
   )
 }

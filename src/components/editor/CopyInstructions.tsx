@@ -61,7 +61,7 @@ export default function CopyInstructions({ editor }: { editor: Editor | null }) 
   }, [note])
 
   return (
-    <div ref={rootRef} className="relative">
+    <div ref={rootRef} className="sm:relative">
       <Tooltip
         name="Copy instructions for AI"
         hint="Our formatting and style rules, for any AI tool you use on your own draft"
@@ -81,7 +81,14 @@ export default function CopyInstructions({ editor }: { editor: Editor | null }) 
             }`}
           >
             {copied ? <CheckIcon width={14} height={14} /> : <CopyIcon />}
-            {copied ? 'Copied' : 'Copy instructions for AI'}
+            {copied ? (
+              'Copied'
+            ) : (
+              <>
+                <span className="sm:hidden">Copy for AI</span>
+                <span className="hidden sm:inline">Copy instructions for AI</span>
+              </>
+            )}
           </button>
         )}
       </Tooltip>
@@ -90,7 +97,7 @@ export default function CopyInstructions({ editor }: { editor: Editor | null }) 
         <div
           id={`${id}-note`}
           role="status"
-          className="fw-card-shadow absolute right-0 top-full z-40 mt-1.5 w-[21.25rem] max-w-[calc(100vw-2rem)] rounded-xl border border-fw-border bg-fw-surface p-4 text-[0.7813rem] leading-relaxed text-fw-text"
+          className="fw-card-shadow absolute inset-x-3 top-full z-40 mt-1.5 sm:inset-x-auto sm:right-0 sm:w-[21.25rem] rounded-xl border border-fw-border bg-fw-surface p-4 text-[0.7813rem] leading-relaxed text-fw-text"
         >
           {note.failed ? (
             <FailedNote text={note.text} />

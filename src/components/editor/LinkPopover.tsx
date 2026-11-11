@@ -118,7 +118,7 @@ export default function LinkPopover({
           apply()
         }
       }}
-      className="fw-card-shadow absolute left-0 top-full z-30 mt-1.5 w-80 max-w-[calc(100vw-2rem)] rounded-xl border border-fw-border bg-fw-surface p-3"
+      className="fw-card-shadow absolute inset-x-3 top-full z-30 mt-1.5 sm:inset-x-auto sm:left-0 sm:w-80 rounded-xl border border-fw-border bg-fw-surface p-3"
     >
       {needsText && (
         <label className="mb-2.5 block">

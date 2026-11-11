@@ -22,12 +22,16 @@ export default function LockedBlock({ block }: { block: Block }) {
     <div>
       <button
         onClick={() => setOpen((o) => !o)}
-        className="inline-flex items-center gap-1.5 rounded-md bg-fw-surface-2/60 px-2 py-1 text-[0.6875rem] text-fw-faint transition-colors hover:bg-fw-surface-2 hover:text-fw-muted"
+        className="inline-flex max-w-full items-start gap-1.5 rounded-md bg-fw-surface-2/60 px-2 py-1 text-left text-[0.6875rem] text-fw-faint transition-colors hover:bg-fw-surface-2 hover:text-fw-muted"
       >
-        <LockSmallIcon width="11" height="11" />
-        <span className="font-medium">{label}</span>
-        <span>{managed ? '· added automatically' : '· kept as it is'}</span>
-        <span className="text-fw-muted">{open ? '· hide' : '· show'}</span>
+        <LockSmallIcon width="11" height="11" className="mt-[0.2rem] shrink-0" />
+        {/* One run of text, so a narrow screen wraps it like a sentence
+            rather than stacking each piece in its own column. */}
+        <span className="min-w-0">
+          <span className="font-medium">{label}</span>{' '}
+          {managed ? '· added automatically' : '· kept as it is'}{' '}
+          <span className="text-fw-muted">{open ? '· hide' : '· show'}</span>
+        </span>
       </button>
       {open && (
         <pre className="mt-1.5 overflow-x-auto whitespace-pre-wrap wrap-break-word rounded-md border border-fw-border bg-fw-bg p-3 text-[0.75rem] leading-relaxed text-fw-muted">

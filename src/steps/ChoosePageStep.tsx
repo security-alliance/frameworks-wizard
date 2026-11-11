@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Card, SearchIcon } from '../components/ui.js'
+import { ArrowLeft, Card, SearchIcon } from '../components/ui.js'
 import { titleize } from '../lib/format.js'
 import { toSegments } from '../lib/pageGroups.js'
 import EditingSummary from './choose/EditingSummary.js'
@@ -32,6 +32,11 @@ export default function ChoosePageStep({
   onPickPage: (path: string) => void
 }) {
   const [query, setQuery] = useState('')
+  // On a phone the two panels can't sit side by side, and stacked in one box
+  // the topic list took all of its height and buried the pages. So narrow
+  // screens drill down instead: topics, then that topic's pages, with a way
+  // back. Above `sm` both panels show and this is ignored.
+  const [pane, setPane] = useState<'topics' | 'pages'>(framework ? 'pages' : 'topics')
   const loading = groups.length === 0
   const q = query.trim().toLowerCase()
 
@@ -60,7 +65,8 @@ export default function ChoosePageStep({
           Which page would you like to improve?
         </h2>
         <p className="mt-1.5 text-sm text-fw-muted">
-          Pick a topic on the left, then a page. Or search for one by name.
+          Pick a topic<span className="hidden sm:inline"> on the left</span>, then a
+          page. Or search for one by name.
         </p>
 
         <div className="relative mt-4">
@@ -81,7 +87,11 @@ export default function ChoosePageStep({
         <SearchResults results={results} path={path} onPickPage={onPickPage} />
       ) : (
         <div className="flex h-105 flex-col sm:flex-row">
-          <aside className="w-full shrink-0 overflow-y-auto border-b border-fw-border bg-fw-surface-2/30 py-2 sm:w-56 sm:border-b-0 sm:border-r">
+          <aside
+            className={`min-h-0 flex-1 overflow-y-auto bg-fw-surface-2/30 py-2 sm:block sm:w-56 sm:flex-none sm:border-r sm:border-fw-border ${
+              pane === 'topics' ? '' : 'hidden'
+            }`}
+          >
             {loading && listFailed ? (
               // Usually GitHub's hourly limit on requests from one address.
               <div className="px-4 py-3 text-sm text-fw-muted">
@@ -102,7 +112,10 @@ export default function ChoosePageStep({
                 return (
                   <button
                     key={g.framework}
-                    onClick={() => onPickFramework(g.framework)}
+                    onClick={() => {
+                      onPickFramework(g.framework)
+                      setPane('pages')
+                    }}
                     className={`flex w-full items-center justify-between gap-2 px-4 py-2 text-left text-sm transition-colors ${
                       active
                         ? 'bg-brand/15 font-medium text-fw-strong'
@@ -119,7 +132,24 @@ export default function ChoosePageStep({
             )}
           </aside>
 
-          <div className="min-w-0 flex-1 overflow-y-auto py-2">
+          <div
+            className={`min-h-0 min-w-0 flex-1 overflow-y-auto pb-2 sm:block sm:pt-2 ${
+              pane === 'pages' ? '' : 'hidden'
+            }`}
+          >
+            <button
+              type="button"
+              onClick={() => setPane('topics')}
+              className="sticky top-0 z-10 flex w-full items-center gap-2 border-b border-fw-border bg-fw-surface px-5 py-3 text-left text-sm sm:hidden"
+            >
+              <ArrowLeft />
+              <span className="text-fw-muted">All topics</span>
+              {activeGroup && (
+                <span className="ml-auto truncate font-medium text-fw-strong">
+                  {activeGroup.title}
+                </span>
+              )}
+            </button>
             {!activeGroup ? (
               <div className="px-5 py-4 text-sm text-fw-faint">
                 Select a topic to see its pages.
@@ -208,12 +238,15 @@ function PageRow({
           active ? 'bg-brand' : 'bg-transparent'
         }`}
       />
-      <span className="truncate">{page.title}</span>
-      {context && (
-        <span className="ml-auto shrink-0 truncate pl-3 text-xs text-fw-faint">
-          {context}
-        </span>
-      )}
+      {/* Narrow: the trail goes under the title, so neither squeezes the other. */}
+      <span className="flex min-w-0 flex-1 flex-col sm:flex-row sm:items-center">
+        <span className="truncate">{page.title}</span>
+        {context && (
+          <span className="truncate text-xs text-fw-faint sm:ml-auto sm:max-w-[50%] sm:shrink-0 sm:pl-3">
+            {context}
+          </span>
+        )}
+      </span>
     </button>
   )
 }

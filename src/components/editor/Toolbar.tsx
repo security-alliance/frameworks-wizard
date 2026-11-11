@@ -75,7 +75,10 @@ export default function Toolbar({
         >
           <ItalicIcon />
         </Btn>
-        <div className="relative" data-link-control>
+        {/* Not positioned below `sm`: the link panel then hangs off the sticky
+            header, full width, instead of off a button near the screen's
+            edge, where 20rem ran past it. */}
+        <div className="sm:relative" data-link-control>
           {/* No keyboard shortcut: the link extension doesn't register one. */}
           <Btn
             label={on('link') ? 'Edit link' : 'Link'}
@@ -97,7 +100,7 @@ export default function Toolbar({
 
       <StyleMenu editor={live} />
 
-      <Divider />
+      <Divider className="hidden sm:block" />
 
       <Group>
         <Btn
@@ -144,6 +147,7 @@ export default function Toolbar({
         <button
           type="button"
           onClick={onToggleHelp}
+          aria-label="Formatting help"
           aria-expanded={helpOpen}
           aria-controls={helpIds}
           className={`flex h-9 items-center gap-1.5 rounded-md border px-2.5 text-[0.7813rem] font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 ${
@@ -153,7 +157,8 @@ export default function Toolbar({
           }`}
         >
           <HelpIcon />
-          Formatting help
+          {/* A phone fits the toolbar in two rows with the icon alone. */}
+          <span className="hidden sm:inline">Formatting help</span>
         </button>
       </div>
     </div>
@@ -177,7 +182,9 @@ function useTransactions(editor: Editor | null) {
 const Group = ({ children }: { children: ReactNode }) => (
   <div className="flex items-center gap-0.5">{children}</div>
 )
-const Divider = () => <span className="mx-1 h-5 w-px bg-fw-border" />
+const Divider = ({ className = '' }: { className?: string }) => (
+  <span className={`mx-1 h-5 w-px bg-fw-border ${className}`} />
+)
 
 // Inactive (no section has the cursor) is `aria-disabled`, not `disabled`: a
 // disabled button gets no mouse events in some browsers, so its tooltip

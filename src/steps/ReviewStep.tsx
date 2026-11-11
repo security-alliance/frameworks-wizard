@@ -80,9 +80,11 @@ export default function ReviewStep({
   }, [technical, pendingJump])
 
   return (
-    <Card className="mx-auto flex h-[72vh] max-w-4xl flex-col overflow-hidden p-0">
-      <div className="flex items-start justify-between gap-4 border-b border-fw-border px-5 py-3">
-        <div>
+    <Card className="mx-auto flex h-[72vh] h-[72dvh] max-w-4xl flex-col overflow-hidden p-0">
+      {/* Narrow: the controls go under the title rather than squeezing it
+          into a column a word wide. */}
+      <div className="flex flex-col gap-2 border-b border-fw-border px-4 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4 sm:px-5">
+        <div className="min-w-0">
           <h2 className="text-sm font-semibold text-fw-strong">Check your changes</h2>
           <p className="text-xs text-fw-faint">
             {dirty
@@ -90,7 +92,7 @@ export default function ReviewStep({
               : 'You haven’t changed anything yet.'}
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 sm:shrink-0 sm:flex-nowrap">
         {dirty && !technical && (
           <div role="group" aria-label="What to show" className="flex rounded-full bg-fw-surface-2 p-0.5 text-xs font-medium">
             {[

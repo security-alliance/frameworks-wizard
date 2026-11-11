@@ -555,7 +555,8 @@ export default function App() {
                 <ArrowLeft /> Back
               </Button>
 
-              <span className="text-xs text-fw-faint">
+              {/* The phone stepper already says it, right above. */}
+              <span className="hidden text-xs text-fw-faint sm:inline">
                 Step {stepIdx + 1} of {STEPS.length}
               </span>
 

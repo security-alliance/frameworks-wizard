@@ -131,7 +131,7 @@ export default function StyleMenu({ editor }: { editor: Editor | null }) {
   const optionId = (i: number) => `${id}-opt-${i}`
 
   return (
-    <div className="relative shrink-0">
+    <div className="shrink-0 sm:relative">
       <button
         ref={triggerRef}
         type="button"
@@ -171,7 +171,7 @@ export default function StyleMenu({ editor }: { editor: Editor | null }) {
           id={`${id}-list`}
           role="listbox"
           aria-label="Text style"
-          className="fw-card-shadow absolute left-0 top-full z-40 mt-1.5 w-[18.75rem] rounded-xl border border-fw-border bg-fw-surface p-1.5"
+          className="fw-card-shadow absolute inset-x-3 top-full z-40 mt-1.5 sm:inset-x-auto sm:left-0 sm:w-[18.75rem] rounded-xl border border-fw-border bg-fw-surface p-1.5"
         >
           {STYLES.map((s, i) => {
             const selected = s.level === level
