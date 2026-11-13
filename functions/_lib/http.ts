@@ -10,7 +10,9 @@ export function json(
 ): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json', ...headers },
+    // `nosniff` so a browser never reads an answer as anything but JSON. The
+    // built files get theirs from dist/_headers (see vite.config.js).
+    headers: { 'Content-Type': 'application/json', 'X-Content-Type-Options': 'nosniff', ...headers },
   })
 }
 

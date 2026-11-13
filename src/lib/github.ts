@@ -29,7 +29,11 @@ interface TreeNode {
 }
 
 // Fetch the raw MDX for a page path like "docs/pages/ai-security/overview.mdx".
+// The path can come from the address bar, so it's checked here too: a `../` in
+// it would otherwise climb out of the repo and load any file on GitHub, shown
+// as if it were a Frameworks page.
 export async function fetchRawPage(path: string): Promise<string> {
+  if (!isEditablePage(path)) throw new Error(`That isn't a page the wizard can open. Path: ${path}`)
   const url = `https://raw.githubusercontent.com/${REPO}/${BRANCH}/${path}`
   const res = await fetch(url)
   if (!res.ok) {
@@ -191,10 +195,15 @@ function sliceSidebar(text: string): string {
   return ''
 }
 
-function isEditablePage(path: string): boolean {
-  if (!path.startsWith(DOCS_ROOT)) return false
-  if (!path.endsWith('.mdx')) return false
-  const name = path.slice(path.lastIndexOf('/') + 1)
+// The same rule as the backend's (isEditablePage in functions/api/submit.ts):
+// an .mdx under docs/pages/ made of plain path segments, never `.` or `..`.
+const PAGE_PATH = /^docs\/pages\/(?:[\w.-]+\/)*[\w.-]+\.mdx$/
+
+export function isEditablePage(path: string): boolean {
+  if (!PAGE_PATH.test(path)) return false
+  const parts = path.split('/')
+  if (parts.some((p) => p === '.' || p === '..')) return false
+  const name = parts[parts.length - 1]
   if (name === 'index.mdx') return false // auto-generated
   if (name.startsWith('_')) return false // internals
   return true

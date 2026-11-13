@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { STEPS, stepIndex } from '../wizard/steps.js'
+import { isEditablePage } from './github.js'
 
 // The wizard's address bar: `#/edit?page=opsec/travel/overview`.
 //
@@ -46,8 +47,13 @@ export interface WizardRoute extends Route {
 const toRoute = (path: string | null | undefined): string | null =>
   path?.startsWith(DOCS_ROOT) ? path.slice(DOCS_ROOT.length).replace(/\.mdx$/, '') : null
 
-const toPath = (route: string | null): string | null =>
-  route ? `${DOCS_ROOT}${route}.mdx` : null
+// A `?page=` that isn't a real page path (a `../` climbing out of the docs, say)
+// is treated as if there were none, so a crafted link can't load an outside
+// file dressed up as a Frameworks page.
+const toPath = (route: string | null): string | null => {
+  const path = route ? `${DOCS_ROOT}${route}.mdx` : null
+  return path && isEditablePage(path) ? path : null
+}
 
 function parseHash(hash: string): { step: number | null; path: string | null } {
   const [id, query] = hash.replace(/^#\/?/, '').split('?')
