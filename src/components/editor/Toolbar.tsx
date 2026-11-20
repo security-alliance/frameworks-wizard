@@ -51,8 +51,14 @@ export default function Toolbar({
   const on = (name: string, attrs?: Record<string, unknown>) =>
     live?.isActive(name, attrs) ?? false
   const disabled = !live
-  const run = (fn: (c: ChainedCommands) => ChainedCommands) => () =>
-    live && fn(live.chain().focus()).run()
+  // Focused directly, not with the chain's `focus()`, which waits a frame: a
+  // button reached with the keyboard has the focus, and the section would
+  // miss the change (it only records edits made while it has focus).
+  const run = (fn: (c: ChainedCommands) => ChainedCommands) => () => {
+    if (!live) return
+    live.view.focus()
+    fn(live.chain()).run()
+  }
 
   return (
     <div className="flex flex-wrap items-center gap-1 border-b border-fw-border bg-fw-surface-2/40 px-3 py-2">

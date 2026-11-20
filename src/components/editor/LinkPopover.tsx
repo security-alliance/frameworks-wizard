@@ -77,11 +77,15 @@ export default function LinkPopover({
       return
     }
 
+    // The cursor is in this panel's fields, not the section, and a section
+    // only records changes made while it has focus (see ProseBlock). Chaining
+    // `focus()` refocuses a frame later, after the change, so the link was
+    // only saved by the next keystroke. Focusing the view first records it now.
+    editor.view.focus()
     if (needsText) {
       const label = text.trim() || url
       editor
         .chain()
-        .focus()
         .insertContent({
           type: 'text',
           text: label,
@@ -92,13 +96,14 @@ export default function LinkPopover({
       // `extendMarkRange` is what makes putting the cursor in the middle of an
       // existing link and editing it work, rather than linking the single
       // character under the caret.
-      editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run()
+      editor.chain().extendMarkRange('link').setLink({ href: url }).run()
     }
     onClose()
   }
 
   function remove() {
-    editor.chain().focus().extendMarkRange('link').unsetLink().run()
+    editor.view.focus()
+    editor.chain().extendMarkRange('link').unsetLink().run()
     onClose()
   }
 

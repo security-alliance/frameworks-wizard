@@ -67,7 +67,7 @@ export default function ScrollNav() {
     // shell's own width puts them just past the edge of the page you're reading
     // at any size, and on a narrow screen the shell *is* the window, so they
     // land in the corner.
-    <div className="pointer-events-none fixed inset-x-0 bottom-4 z-30 px-4 print:hidden">
+    <div className="fw-scrollnav pointer-events-none fixed inset-x-0 bottom-4 z-30 px-4 print:hidden">
       <div className="mx-auto flex max-w-6xl justify-end">
         <div className="pointer-events-auto flex flex-col gap-1.5">
           {up && (

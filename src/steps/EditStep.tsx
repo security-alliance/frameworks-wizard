@@ -90,6 +90,14 @@ export default function EditStep({
   const helpId = useId()
   const toggleHelp = () => setHelpOpen((o) => !o)
   const closeHelp = () => setHelpOpen(false)
+  // The page's scroll arrows sit in the same bottom-right corner the panel
+  // docks into, and drew over its last lines. They step aside while it's open
+  // (see `fw-scrollnav` in index.css): it's opened to be read, and closing it
+  // brings them back.
+  useEffect(() => {
+    document.documentElement.toggleAttribute('data-help-open', helpOpen)
+    return () => document.documentElement.removeAttribute('data-help-open')
+  }, [helpOpen])
   const side = focus
     ? { row: 'min-[1720px]:-mx-[6.5rem] min-[1720px]:flex min-[1720px]:items-start min-[1720px]:justify-center min-[1720px]:gap-4', out: 'hidden min-[1720px]:block', in: 'min-[1720px]:hidden' }
     : { row: 'xl:-mx-14 xl:flex xl:items-start xl:justify-center xl:gap-4', out: 'hidden xl:block', in: 'xl:hidden' }

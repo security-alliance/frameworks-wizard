@@ -213,19 +213,33 @@ export function keepUntouched(original: string, next: string): string {
   const out: string[][] = []
   let w = 0
   let n = 0
-  for (const change of diffArrays(was.map(join), now.map(join), { comparator: sameContent })) {
+  for (const change of diffArrays(was.map(join), now.map(join), { comparator: sameItem })) {
     if (change.removed) {
       w += change.count
     } else if (change.added) {
       out.push(...now.slice(n, n + change.count))
       n += change.count
     } else {
-      out.push(...was.slice(w, w + change.count))
+      for (let k = 0; k < change.count; k++) out.push(withNumberOf(was[w + k], now[n + k]))
       w += change.count
       n += change.count
     }
   }
   return out.map(join).join('\n')
+}
+
+// A numbered list item that only moved down a number, because a row was added
+// above it, is unchanged too: it keeps its own wrapping and takes the new
+// number. Compared with its number, it read as rewritten and was re-wrapped,
+// so the pull request showed every row after the new one as changed.
+const ITEM_NUMBER_RE = /^(\s*)(\d+)([.)]\s)/
+const unnumbered = (text: string) => text.replace(ITEM_NUMBER_RE, '$1#$3')
+const sameItem = (a: string, b: string) => sameContent(a, b) || sameContent(unnumbered(a), unnumbered(b))
+
+function withNumberOf(was: string[], now: string[]): string[] {
+  const n = ITEM_NUMBER_RE.exec(now[0])
+  if (!n || !ITEM_NUMBER_RE.test(was[0])) return was
+  return [was[0].replace(ITEM_NUMBER_RE, `$1${n[2]}$3`), ...was.slice(1)]
 }
 
 /** One markdown block mid-unwrap: `atomic` lines never absorb the next line. */

@@ -678,9 +678,37 @@ const DIVIDER_ROW_RE = /^([ \t>]*)\| ---(?: \| ---)* \|$/gm
  * alignment is on the header cells (see `align` above), read here in document
  * order, which is the order the tables are written in.
  */
+// A `|` typed in a table cell. The converter writes cell text as it is, so
+// markdown read the pipe as the start of another cell: a row with one cell too
+// many, and after a reload a whole extra empty column (frameworks PR #698).
+// Each one is swapped for this stand-in before writing, and written back as
+// `\|`, which markdown reads as a pipe in the text.
+const CELL_PIPE = '\uE000'
+const CELL_TYPES = new Set(['tableCell', 'tableHeader'])
+
+/** The document as it's written out, with pipes in table cells marked for escaping. */
+function withCellPipes(editor: Editor): Editor['state']['doc'] {
+  const tr = editor.state.tr
+  const inCell = (pos: number) => {
+    const $pos = editor.state.doc.resolve(pos)
+    for (let d = $pos.depth; d > 0; d--) if (CELL_TYPES.has($pos.node(d).type.name)) return true
+    return false
+  }
+  // One character for one, so the positions stay right.
+  editor.state.doc.descendants((node, pos) => {
+    if (!node.isText || !node.text?.includes('|') || !inCell(pos)) return
+    for (let i = node.text.indexOf('|'); i >= 0; i = node.text.indexOf('|', i + 1)) {
+      tr.replaceWith(pos + i, pos + i + 1, editor.schema.text(CELL_PIPE, node.marks))
+    }
+  })
+  return tr.doc
+}
+
 export function editorMarkdown(editor: Editor): string {
   assignChecklistIds(editor)
-  const md =(editor.storage as unknown as { markdown: { getMarkdown(): string } }).markdown.getMarkdown()
+  const md = (
+    editor.storage as unknown as { markdown: { serializer: { serialize(doc: unknown): string } } }
+  ).markdown.serializer.serialize(withCellPipes(editor))
   const aligns: (string | null)[][] = []
   ;(editor.state.doc as unknown as DocNode).descendants((node) => {
     if (node.type.name !== 'table') return true
@@ -691,10 +719,33 @@ export function editorMarkdown(editor: Editor): string {
     return false
   })
   let t = 0
-  return md.replace(DIVIDER_ROW_RE, (row, lead: string) => {
+  const aligned = md.replace(DIVIDER_ROW_RE, (row, lead: string) => {
     const a = aligns[t++]
     if (!a || a.every((x) => !x)) return row
     const cell = (x: string | null) => (x === 'left' ? ':---' : x === 'right' ? '---:' : x === 'center' ? ':---:' : '---')
     return `${lead}| ${a.map(cell).join(' | ')} |`
   })
+  return tidyTableRows(aligned).replace(new RegExp(CELL_PIPE, 'g'), '\\|')
+}
+
+// An empty cell comes out as `|  |`, two spaces, which the docs' lint (MD060,
+// one space each side) reports on every empty cell. Written `| |`. Only rows of
+// a table, outside code.
+function tidyTableRows(md: string): string {
+  let fence: string | null = null
+  return md
+    .split('\n')
+    .map((line) => {
+      const f = line.match(/^\s*(`{3,}|~{3,})/)
+      if (fence) {
+        if (f && f[1][0] === fence[0] && f[1].length >= fence.length) fence = null
+        return line
+      }
+      if (f) {
+        fence = f[1]
+        return line
+      }
+      return /^\s*(?:>\s*)*\|.*\|\s*$/.test(line) ? line.replace(/\| {2}(?=\|)/g, '| ') : line
+    })
+    .join('\n')
 }

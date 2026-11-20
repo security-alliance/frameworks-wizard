@@ -1,4 +1,4 @@
-import { diffLines, diffWordsWithSpace } from 'diff'
+import { diffArrays, diffLines, diffWordsWithSpace } from 'diff'
 import { headingsIn } from './headings.js'
 import { unwrapMarkdown } from './markdown.js'
 import type { Block } from './types.js'
@@ -184,11 +184,48 @@ function diffRows(original: string, edited: string): Row[] {
   return rows
 }
 
+// A numbered list item without its number. A row added to the middle of a
+// numbered list renumbers every row after it; compared with their numbers,
+// none of those rows matches its old self, and pairing by position showed the
+// whole rest of the list as rewritten.
+const unnumbered = (line: string) => line.replace(/^(\s*)\d+([.)]\s)/, '$1#$2')
+
+// The lines of a rewrite, matched up first ignoring list numbers: rows that
+// only moved down a number are unchanged, and what's left pairs off as below.
+function rewriteRows(before: string[], after: string[]): Row[] {
+  const rows: Row[] = []
+  let b = 0
+  let a = 0
+  const parts = diffArrays(before.map(unnumbered), after.map(unnumbered))
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i]
+    const n = part.count ?? part.value.length
+    if (!part.added && !part.removed) {
+      for (let k = 0; k < n; k++) rows.push({ text: after[a + k], mark: null })
+      a += n
+      b += n
+    } else if (part.removed && parts[i + 1]?.added) {
+      const m = parts[i + 1].count ?? parts[i + 1].value.length
+      rows.push(...pairRows(before.slice(b, b + n), after.slice(a, a + m)))
+      b += n
+      a += m
+      i++
+    } else if (part.removed) {
+      for (let k = 0; k < n; k++) rows.push({ text: before[b + k], mark: 'del' })
+      b += n
+    } else {
+      for (let k = 0; k < n; k++) rows.push({ text: after[a + k], mark: 'ins' })
+      a += n
+    }
+  }
+  return rows
+}
+
 // Each pair is one paragraph (or heading, or list item) against its
 // replacement, which is the granularity word-diffing stays readable at. Anything
 // left unpaired — a paragraph added or dropped outright — is marked whole,
 // because there is nothing to diff it against.
-function rewriteRows(before: string[], after: string[]): Row[] {
+function pairRows(before: string[], after: string[]): Row[] {
   const rows: Row[] = []
   const paired = Math.min(before.length, after.length)
   for (let i = 0; i < paired; i++) {

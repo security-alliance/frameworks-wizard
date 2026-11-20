@@ -19,6 +19,7 @@ import {
 } from '../../lib/markdown.js'
 import type { Block } from '../../lib/types.js'
 import { LockSmallIcon, PencilIcon } from '../ui.js'
+import TableControls from './TableControls.js'
 
 // One section of the page, edited as rich text — no markdown syntax visible.
 //
@@ -50,6 +51,8 @@ export default function ProseBlock({
   const guard = useRef(false)
   // For the paste handler below, which is set up before `useEditor` returns.
   const editorRef = useRef<Editor | null>(null)
+  // The section's box: the table controls are placed in it.
+  const rootRef = useRef<HTMLDivElement>(null)
   // The editor is created once, so it reads the page as it is now through this.
   const contextRef = useRef(context)
   contextRef.current = context
@@ -130,20 +133,29 @@ export default function ProseBlock({
 
   // Editable has to show before the click. A page of plain text gives no hint
   // that any of it can be typed into, so hovering a section looks the way a
-  // focused one does (surface, outline), with an "Edit" chip in the corner.
-  // The chip is decoration, so it's out of the way of the pointer and of screen
-  // readers, and gone once the section has the cursor. The right padding keeps
-  // it off the text. Locked sections render elsewhere and get none of this.
+  // focused one does (surface, outline), with an "Edit" chip in the corner,
+  // gone once the section has the cursor. The chip looked like a button, so it
+  // is one: it puts the cursor at the end of the section. It used to let the
+  // click fall through, which beside a table landed on nothing. The right
+  // padding keeps it off the text. Locked sections render elsewhere and get
+  // none of this.
   return (
-    <div className="group fw-editor prose-preview relative cursor-text rounded-lg px-2 pr-14 outline-1 outline-transparent transition-colors hover:bg-fw-surface-2/60 hover:outline-fw-border focus-within:bg-fw-surface-2/60 focus-within:outline-fw-border motion-reduce:transition-none">
-      <span
-        aria-hidden
-        className="pointer-events-none absolute right-2 top-1.5 hidden items-center gap-1 rounded-md border border-fw-border bg-fw-surface px-1.5 py-0.5 text-[0.6875rem] font-medium text-fw-muted group-hover:flex group-focus-within:hidden!"
+    <div
+      ref={rootRef}
+      className="group fw-editor prose-preview relative cursor-text rounded-lg px-2 pr-14 outline-1 outline-transparent transition-colors hover:bg-fw-surface-2/60 hover:outline-fw-border focus-within:bg-fw-surface-2/60 focus-within:outline-fw-border motion-reduce:transition-none"
+    >
+      <button
+        type="button"
+        tabIndex={-1}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => editor?.commands.focus('end')}
+        className="absolute right-2 top-1.5 z-10 hidden cursor-pointer items-center gap-1 rounded-md border border-fw-border bg-fw-surface px-1.5 py-0.5 text-[0.6875rem] font-medium text-fw-muted hover:border-brand hover:text-fw-strong group-hover:flex group-focus-within:hidden!"
       >
         <PencilIcon width={11} height={11} />
         Edit
-      </span>
+      </button>
       <EditorContent editor={editor} />
+      {editor && <TableControls editor={editor} root={rootRef} />}
     </div>
   )
 }

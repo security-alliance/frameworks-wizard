@@ -155,11 +155,14 @@ export default function ChoosePageStep({
                 Select a topic to see its pages.
               </div>
             ) : (
-              segments.map((seg) => (
-                <div key={seg.key || '_root'} className="mb-1">
-                  {seg.label && (
-                    <div className="px-5 pb-1 pt-3 text-[0.6875rem] font-semibold uppercase tracking-wide text-fw-faint">
-                      {seg.label}
+              segments.map((seg, i) => (
+                <div key={`${seg.key || '_root'}-${i}`} className="mb-1">
+                  {/* The framework's own pages after a subsection (DevSecOps'
+                      Code Signing… after Developer-Targeted Intrusions) get the
+                      framework's name, or they read as part of that subsection. */}
+                  {(seg.label || i > 0) && (
+                    <div className="px-5 pb-1 pt-3 text-xs font-medium text-fw-muted">
+                      {seg.label || activeGroup.title}
                     </div>
                   )}
                   {seg.pages.map((p) => (

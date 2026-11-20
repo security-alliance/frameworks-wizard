@@ -503,3 +503,9 @@ body {
 .fw-editor :is(ul, ol)[data-type="taskList"] li p {
   margin: 0;
 }
+
+/* The scroll arrows give way to the formatting help, which docks into the same
+   corner (see EditStep). */
+:root[data-help-open] .fw-scrollnav {
+  display: none;
+}
