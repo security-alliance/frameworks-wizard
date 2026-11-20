@@ -12,11 +12,13 @@ import type { Session } from './session.js'
 
 export type ForkState =
   | { status: 'ready'; repo: string; owner: string; branch: string }
-  /** Their fork exists, but the app can't write to it yet. */
-  | { status: 'needs-install'; repo: string }
+  /** Their fork exists, but the app can't write to it yet. `repoId` is for
+   *  the install link, which can name the fork by id. */
+  | { status: 'needs-install'; repo: string; repoId: number }
   | { status: 'needs-fork' }
 
 interface Repo {
+  id: number
   full_name: string
   name: string
   fork: boolean
@@ -85,6 +87,8 @@ export async function findFork(
   // unless that name is taken, so this finds nearly every existing fork; one
   // under another name shows up above as soon as the app is installed on it.
   const guess = await ghOrNull<Repo>(token, `/repos/${session.login}/${upstreamName}`)
-  if (guess && isOurFork(guess)) return { status: 'needs-install', repo: guess.full_name }
+  if (guess && isOurFork(guess)) {
+    return { status: 'needs-install', repo: guess.full_name, repoId: guess.id }
+  }
   return { status: 'needs-fork' }
 }

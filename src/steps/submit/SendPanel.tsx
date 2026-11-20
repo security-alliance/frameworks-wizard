@@ -344,10 +344,11 @@ function SetupPanel({
             that land on this step again, with the draft. */}
         <SetupItem n={2} done={false} title="Let the wizard save to your copy" dim={!forked}>
           <p>
-            On GitHub, choose{' '}
-            <b className="text-fw-text">Only select repositories</b>, pick{' '}
-            <b className="text-fw-text">{name}</b>, then{' '}
-            <b className="text-fw-text">Install</b>. GitHub brings you back here.
+            On GitHub, check that{' '}
+            <b className="text-fw-text">Only select repositories</b> and{' '}
+            <b className="text-fw-text">{name}</b> are chosen, then click{' '}
+            <b className="text-fw-text">Install</b>. GitHub brings you back
+            here.
           </p>
           <p className="mt-1">
             The wizard can then write to that copy and nothing else on your
