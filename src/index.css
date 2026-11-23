@@ -509,3 +509,19 @@ body {
 :root[data-help-open] .fw-scrollnav {
   display: none;
 }
+
+/* The site's ContributeFooter, as the preview draws it. Its own CSS (copied
+   from the frameworks repo, kept as is) caps the content at 500px; the wizard
+   renders text up to 125% larger (see `html`), so its two buttons no longer
+   fit side by side. The same cap in rem scales with the text. And the
+   preview's link style is more specific than the buttons' own, so it gave
+   them an underline and the link colour. */
+.prose-preview .contribute-footer-content {
+  max-width: 31.25rem;
+}
+.prose-preview .contribute-footer-button,
+.prose-preview .contribute-footer-button:hover {
+  color: white;
+  text-decoration: none;
+}
+
