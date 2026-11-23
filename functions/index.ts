@@ -9,6 +9,7 @@ import { onRequestPost as logout } from './api/auth/logout.js'
 import { onRequestGet as fork } from './api/fork.js'
 import { onRequestPost as submit } from './api/submit.js'
 import { onRequestGet as prs } from './api/prs.js'
+import { onRequestGet as profile } from './api/profile.js'
 import { json } from './_lib/http.js'
 import { BASE_PATH, type Ctx, type Env } from './_lib/env.js'
 
@@ -22,6 +23,7 @@ const ROUTES: Record<string, Partial<Record<string, Handler>>> = {
   [`${BASE_PATH}/api/fork`]: { GET: fork },
   [`${BASE_PATH}/api/submit`]: { POST: submit },
   [`${BASE_PATH}/api/prs`]: { GET: prs },
+  [`${BASE_PATH}/api/profile`]: { GET: profile },
 }
 
 export default {

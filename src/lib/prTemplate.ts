@@ -195,6 +195,8 @@ export interface PrBodyInput {
   volunteer?: string | null
   /** A new page whose author has no profile to credit them under yet. */
   unattributed?: boolean
+  /** Their contributors.json profile goes in with it. */
+  addsProfile?: boolean
 }
 
 /** One line naming people: "Review requested from the ENS steward: @ghadi8". */
@@ -219,6 +221,8 @@ export interface PrParts {
   volunteer: string | null
   /** Said when a new page's `wrote` list had to stay empty. */
   attribution: string | null
+  /** Said when the contributor's profile goes in with it. */
+  profile: string | null
   /** The "Type of change" lines that apply. */
   types: string[]
   /** The "If applicable" lines that apply. All ticked; the rest are left out. */
@@ -234,6 +238,7 @@ export function prParts({
   credited = [],
   volunteer = null,
   unattributed = false,
+  addsProfile = false,
 }: PrBodyInput): PrParts {
   const anyNew = pages.some((p) => p.isNew)
   const anyEdit = pages.some((p) => !p.isNew)
@@ -278,6 +283,7 @@ export function prParts({
     attribution: unattributed
       ? 'The contributor has no profile in `contributors.json` yet, so the new page’s `wrote` list is empty.'
       : null,
+    profile: addsProfile ? 'added to `contributors.json`, so the Spotlight Zone can show them and their badges' : null,
     types: [
       ...(anyNew ? [TEMPLATE_LINES.newContent, TEMPLATE_LINES.outline] : []),
       ...(anyEdit ? [TEMPLATE_LINES.type] : []),
@@ -309,6 +315,9 @@ export function buildPrBody(input: PrBodyInput): string {
   else if (p.pages.length > 1) {
     lines.push('- **Pages:**', ...p.pages.map((x) => `  - ${link(x)}`))
   }
+  // Keep the wording: the server drops this exact line when the profile turns
+  // out to be there already (functions/api/submit.ts).
+  if (p.profile) lines.push(`- **Contributor profile:** ${p.profile}`)
   for (const line of p.people) {
     lines.push(`- **${line.label}:** ${line.people.map((x) => written(x, line.notify)).join(' ')}`)
   }

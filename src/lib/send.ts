@@ -7,6 +7,7 @@
 
 import { AUTH_API } from './useAuth.js'
 import { rememberReturn } from './useWizardRoute.js'
+import type { ProfileFields } from '../steps/submit/ProfileCard.js'
 
 const API = `${import.meta.env.BASE_URL}api`
 
@@ -43,6 +44,15 @@ export interface SubmitInput {
   files: SubmitFile[]
   title: string
   body: string
+  /** Their contributors.json profile, to add with the suggestion. */
+  profile?: ProfileFields
+}
+
+/** What GET /api/profile says: their public GitHub profile, and whether an
+ *  open pull request of theirs already adds their contributors.json profile. */
+export interface GitHubProfile extends ProfileFields {
+  login: string
+  pending: boolean
 }
 
 /** What /api/submit answers. */
@@ -53,6 +63,8 @@ interface Submitted {
   overlap: boolean
   /** Which pages that happened on. */
   overlapPaths?: string[]
+  /** Their contributors.json profile went in with it. */
+  profileAdded?: boolean
 }
 
 export interface Sent extends Submitted {
@@ -132,6 +144,8 @@ export const submit = (input: SubmitInput) =>
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   })
+
+export const getProfile = () => call<GitHubProfile>('profile')
 
 export const listPrs = () => call<{ prs: OpenPr[]; total: number; all: string }>('prs')
 

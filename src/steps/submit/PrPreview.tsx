@@ -129,6 +129,12 @@ export default function PrPreview({
                     </span>
                   </li>
                 )}
+                {parts.profile && (
+                  <li>
+                    <span className="font-semibold text-fw-text">Contributor profile:</span>{' '}
+                    {parts.profile.replace(/`/g, '')}
+                  </li>
+                )}
                 {parts.people.map((line) => (
                   <li key={line.label}>
                     <span className="font-semibold text-fw-text">{line.label}:</span>{' '}

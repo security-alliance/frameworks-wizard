@@ -1,10 +1,14 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Card, Button, PencilIcon, ChevronDown, PlusIcon } from '../components/ui.js'
 import PrPreview from './submit/PrPreview.js'
 import SendPanel from './submit/SendPanel.js'
+import ProfileCard from './submit/ProfileCard.js'
 import { DescriptionField, TagPicker } from '../components/editor/PageDetails.js'
 import type { NewPage } from '../lib/newPages.js'
+import type { ProfileChoice } from './submit/ProfileCard.js'
+import { getProfile } from '../lib/send.js'
+import type { GitHubProfile } from '../lib/send.js'
 import { REPO, pageTrail } from '../lib/github.js'
 import { changes, useDraftPages, withBody } from '../lib/suggestion.js'
 import { buildFrontmatter, readNewPage } from '../lib/newPages.js'
@@ -138,9 +142,44 @@ export default function SubmitStep({
     people: frameworkStewards(contributorData, fw),
   }))
   const credited = uniquePeople(ticked.flatMap((r) => pageContributors(r.fm, contributorData)))
-  // A new page credits its author under `wrote`, by the slug of their profile.
-  // Without one there's nothing to point at yet, and the PR says so.
-  const profile = profileSlug(contributorData, auth.status === 'in' ? auth.user?.login : undefined)
+  // Their profile in contributors.json, if they have one. Without one, the
+  // profile card offers to add it with this suggestion (see ProfileCard):
+  // unless their key is someone else's already, or an open pull request of
+  // theirs adds one, which would make two.
+  const login = auth.status === 'in' ? auth.user?.login : undefined
+  const existing = profileSlug(contributorData, login)
+  const keyTaken = !!login && !existing && !!contributorData[login.toLowerCase()]
+  const [github, setGithub] = useState<GitHubProfile | null>(null)
+  useEffect(() => {
+    if (!login || existing) return
+    let live = true
+    getProfile().then((r) => live && r.ok && setGithub(r.value))
+    return () => {
+      live = false
+    }
+  }, [login, existing])
+  const [choice, setChoice] = useState<ProfileChoice | null>(readChoice)
+  useEffect(() => {
+    if (github && !choice) {
+      setChoice({
+        on: true,
+        fields: {
+          name: github.name,
+          job_title: '',
+          company: github.company,
+          website: github.website,
+          twitter: github.twitter,
+          description: '',
+        },
+      })
+    }
+  }, [github, choice])
+  useEffect(() => saveChoice(choice), [choice])
+  const offerProfile = !!login && !existing && !keyTaken && !!github && !github.pending && !!choice
+  const addsProfile = offerProfile && !!choice?.on
+  // A new page credits its author under `wrote`, by the slug of their profile,
+  // the one there or the one going in with it. Without either, the PR says so.
+  const profile = existing ?? (addsProfile && login ? login.toLowerCase() : null)
   const hasNew = ticked.some((r) => readNewPage(r.path))
   // The offer is for the first framework in the suggestion with nobody
   // looking after it, which is the open page's whenever it has changes.
@@ -153,6 +192,7 @@ export default function SubmitStep({
     credited,
     volunteer: answers.stewardInterest ? vacancy : null,
     unattributed: hasNew && !profile,
+    addsProfile,
   }
   const title = buildPrTitle(pages)
 
@@ -184,6 +224,7 @@ export default function SubmitStep({
     }),
     title,
     body: buildPrBody(bodyInput),
+    ...(addsProfile && choice ? { profile: choice.fields } : {}),
   })
 
   // Nothing to send. Rendering the form here would leave every field fillable
@@ -369,6 +410,7 @@ export default function SubmitStep({
               }
             />
           )}
+          {offerProfile && login && choice && <ProfileCard login={login} value={choice} onChange={setChoice} />}
         </div>
 
         <SendPanel
@@ -589,4 +631,25 @@ function profileSlug(directory: ContributorDirectory, login?: string): string | 
   }
   // Not by key: a slug that happens to match someone's login may be another person.
   return null
+}
+
+// The profile card's answers last the tab, like the rest of Send: signing in
+// and the one-time setup leave for GitHub and come back to a fresh page.
+const CHOICE_KEY = 'fw-profile-choice'
+
+function readChoice(): ProfileChoice | null {
+  try {
+    const raw = sessionStorage.getItem(CHOICE_KEY)
+    return raw ? (JSON.parse(raw) as ProfileChoice) : null
+  } catch {
+    return null
+  }
+}
+
+function saveChoice(choice: ProfileChoice | null): void {
+  try {
+    if (choice) sessionStorage.setItem(CHOICE_KEY, JSON.stringify(choice))
+  } catch {
+    /* the card just starts over after a trip to GitHub */
+  }
 }

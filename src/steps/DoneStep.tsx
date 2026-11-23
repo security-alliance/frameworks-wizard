@@ -1,3 +1,4 @@
+import { SPOTLIGHT_URL } from '../lib/prTemplate.js'
 import { Card, Button, CheckIcon, ExternalIcon, PencilIcon } from '../components/ui.js'
 import { DISCORD_URL } from '../lib/prTemplate.js'
 import type { Sent } from '../lib/send.js'
@@ -51,6 +52,16 @@ export default function DoneStep({
           </Button>
         </a>
       </div>
+
+      {sent.profileAdded && (
+        <p className="mt-6 rounded-lg border border-brand/30 bg-brand-soft/30 p-3 text-[0.8125rem] leading-relaxed text-fw-muted">
+          Your contributor profile goes in with it. Once it&apos;s merged you&apos;ll be in the{' '}
+          <a href={SPOTLIGHT_URL} target="_blank" rel="noopener noreferrer" className="text-brand-hover underline">
+            Spotlight Zone
+          </a>
+          , and your badges start with this one.
+        </p>
+      )}
 
       {/* Only when it happened, and only when it matters: a change elsewhere
           in the page is GitHub's to combine and not worth a word. The

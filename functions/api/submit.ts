@@ -34,6 +34,8 @@ import { GitHubError, encodePath, gh, ghGraphql, toBase64 } from '../_lib/github
 import { findFork } from '../_lib/fork.js'
 import { merge3 } from '../_lib/merge.js'
 import { addSidebarLinks } from '../_lib/sidebar.js'
+import { CONTRIBUTORS_FILE, addProfile, hasProfile, readProfile } from '../_lib/profile.js'
+import type { ProfileInput } from '../_lib/profile.js'
 import type { SidebarLink } from '../_lib/sidebar.js'
 import { BRANCH, type Ctx } from '../_lib/env.js'
 
@@ -56,6 +58,9 @@ interface Input {
   files: FileInput[]
   title: string
   body: string
+  /** Their contributors.json profile, to add in the same commit, if they
+   *  have none yet. See _lib/profile.ts. */
+  profile?: ProfileInput
 }
 
 // The commit is made through GraphQL rather than REST's "update a file": GitHub
@@ -100,10 +105,11 @@ export async function onRequestPost({ request, env }: Ctx): Promise<Response> {
 
     const paths = input.files.map((f) => f.path)
     const creates = input.files.filter((f) => f.create)
-    // The sidebar is read with the pages, after them, when there's a page to
-    // add to it.
-    const read = [...paths, ...(creates.length ? [SIDEBAR_FILE] : [])]
+    // The sidebar and the contributors file are read with the pages, after
+    // them, when there's a page to add to the one or a profile to the other.
+    const read = [...paths, ...(creates.length ? [SIDEBAR_FILE] : []), ...(input.profile ? [CONTRIBUTORS_FILE] : [])]
     const sidebarAt = creates.length ? paths.length : -1
+    const contributorsAt = input.profile ? read.length - 1 : -1
     const [inCopy, upstreamNow] = await Promise.all([
       readFiles(token, fork.repo, base, read),
       readFiles(token, upstream, BRANCH, read),
@@ -171,6 +177,27 @@ export async function onRequestPost({ request, env }: Ctx): Promise<Response> {
       additions.push({ path: SIDEBAR_FILE, contents: toBase64(sidebar) })
     }
 
+    // Their profile, unless one is there already, here or upstream (a PR
+    // merged since the Send step looked): then there's nothing to add.
+    let profileAdded = false
+    if (input.profile) {
+      const copy = inCopy[contributorsAt]
+      const now = upstreamNow[contributorsAt]
+      if (copy !== null && now !== null && !hasProfile(copy, session.login) && !hasProfile(now, session.login)) {
+        const withProfile = addProfile(copy, session.login, input.profile)
+        if (withProfile) {
+          if (now !== copy && merge3(now, copy, withProfile) === null) overlap.push(CONTRIBUTORS_FILE)
+          additions.push({ path: CONTRIBUTORS_FILE, contents: toBase64(withProfile) })
+          profileAdded = true
+        }
+      }
+    }
+
+    // The body says the profile is added; when it turned out to be there
+    // already, that line goes.
+    const bodyText =
+      input.profile && !profileAdded ? input.body.replace(/^- \*\*Contributor profile:\*\*.*\n?/m, '') : input.body
+
     const branch = await createBranch(token, fork.repo, paths, base)
     try {
       await ghGraphql(token, CREATE_COMMIT, {
@@ -186,7 +213,7 @@ export async function onRequestPost({ request, env }: Ctx): Promise<Response> {
         method: 'POST',
         body: {
           title: input.title,
-          body: overlap.length ? withConflictWarning(input.body, overlap, paths.length) : input.body,
+          body: overlap.length ? withConflictWarning(bodyText, overlap, paths.length) : bodyText,
           head: `${fork.owner}:${branch}`,
           base: BRANCH,
           // So maintainers can fix a typo themselves instead of asking for it.
@@ -194,7 +221,7 @@ export async function onRequestPost({ request, env }: Ctx): Promise<Response> {
         },
       })
       return json(
-        { url: pr.html_url, number: pr.number, overlap: overlap.length > 0, overlapPaths: overlap },
+        { url: pr.html_url, number: pr.number, overlap: overlap.length > 0, overlapPaths: overlap, profileAdded },
         200,
         PRIVATE,
       )
@@ -293,6 +320,11 @@ async function readInput(request: Request): Promise<Input | string> {
     return 'The title is missing or too long.'
   }
   if (typeof body !== 'string' || body.length > MAX_BODY) return 'The description is too long.'
+  if (data.profile !== undefined) {
+    const profile = readProfile(data.profile)
+    if (typeof profile === 'string') return profile
+    return { files, title: title.trim(), body, profile }
+  }
   return { files, title: title.trim(), body }
 }
 
