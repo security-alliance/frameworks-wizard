@@ -3,8 +3,12 @@ import type { ReactNode } from 'react'
 import { Card, Button, PencilIcon, ChevronDown, PlusIcon } from '../components/ui.js'
 import PrPreview from './submit/PrPreview.js'
 import SendPanel from './submit/SendPanel.js'
+import { DescriptionField, TagPicker } from '../components/editor/PageDetails.js'
+import type { NewPage } from '../lib/newPages.js'
 import { REPO, pageTrail } from '../lib/github.js'
 import { changes, useDraftPages, withBody } from '../lib/suggestion.js'
+import { buildFrontmatter, readNewPage } from '../lib/newPages.js'
+import { MAP_PLACEHOLDERS, stripPlaceholders } from '../lib/placeholders.js'
 import type { BuiltPage } from '../lib/suggestion.js'
 import {
   SPOTLIGHT_URL,
@@ -67,6 +71,7 @@ export default function SubmitStep({
   onAddPage,
   onCheckPage,
   onSent,
+  onChangeNewPage,
 }: {
   path: string
   current?: PageEntry
@@ -96,6 +101,8 @@ export default function SubmitStep({
   /** Open a page of the suggestion on the Check step. */
   onCheckPage: (path: string) => void
   onSent: (sent: Sent) => void
+  /** A new page's description or tags changed, here or in Page details. */
+  onChangeNewPage: (page: NewPage) => void
 }) {
   const others = useDraftPages(drafts, path)
 
@@ -131,6 +138,10 @@ export default function SubmitStep({
     people: frameworkStewards(contributorData, fw),
   }))
   const credited = uniquePeople(ticked.flatMap((r) => pageContributors(r.fm, contributorData)))
+  // A new page credits its author under `wrote`, by the slug of their profile.
+  // Without one there's nothing to point at yet, and the PR says so.
+  const profile = profileSlug(contributorData, auth.status === 'in' ? auth.user?.login : undefined)
+  const hasNew = ticked.some((r) => readNewPage(r.path))
   // The offer is for the first framework in the suggestion with nobody
   // looking after it, which is the open page's whenever it has changes.
   const vacancy = stewards.find((g) => g.people.length === 0)?.framework ?? null
@@ -141,13 +152,36 @@ export default function SubmitStep({
     stewards,
     credited,
     volunteer: answers.stewardInterest ? vacancy : null,
+    unattributed: hasNew && !profile,
   }
   const title = buildPrTitle(pages)
 
   // What gets sent: the same title and body the preview draws, and each page
   // twice, as it loaded and as it is now.
   const request = (): SubmitInput => ({
-    files: ticked.map((r) => ({ path: r.path, original: r.original!, content: r.content! })),
+    files: ticked.map((r) => {
+      // Placeholders never go out: a new page's empty template parts, and an
+      // empty line in a section map's new row (see placeholders.ts).
+      const created = readNewPage(r.path)
+      if (!created) {
+        return { path: r.path, original: r.original!, content: stripPlaceholders(r.content!, MAP_PLACEHOLDERS) }
+      }
+      // Its frontmatter rewritten with the author in it; the body as written.
+      const content = stripPlaceholders(
+        r.content!.replace(
+          /^---\n[\s\S]*?\n---\n/,
+          `---\n${buildFrontmatter(created, profile ? [profile] : [])}\n---\n`,
+        ),
+      )
+      return {
+        path: r.path,
+        original: '',
+        content,
+        create: created.after
+          ? { title: created.title, after: created.after }
+          : { title: created.title, before: created.before ?? '' },
+      }
+    }),
     title,
     body: buildPrBody(bodyInput),
   })
@@ -182,12 +216,24 @@ export default function SubmitStep({
   const added = pages.reduce((n, p) => n + p.added, 0)
   const removed = pages.reduce((n, p) => n + p.removed, 0)
   const nameOf = (p: string) => pageEntry(p).title
+  // A new page's description and tags are what its frontmatter can't do
+  // without; they're asked for in Page details, on the Write step.
+  const created = ticked.map((r) => readNewPage(r.path)).filter((p): p is NewPage => !!p)
+  const unfinished = created.find((p) => !p.description.trim() || !p.tags?.length)
   const blocked =
     ticked.length === 0
       ? 'Tick at least one page above.'
-      : !note.trim()
-        ? 'Write a note above first. It’s the first thing the maintainers read.'
-        : null
+      : unfinished
+        ? `“${unfinished.title}” needs ${
+            !unfinished.description.trim() && !unfinished.tags?.length
+              ? 'a description and tags'
+              : !unfinished.description.trim()
+                ? 'a description'
+                : 'tags'
+          }. Add ${!unfinished.description.trim() && !unfinished.tags?.length ? 'them' : 'it'} above, under “About your new page”.`
+        : !note.trim()
+          ? 'Write a note above first. It’s the first thing the maintainers read.'
+          : null
 
   // One column, in the order things happen: which pages, the note, who hears
   // about it, what goes out, any one-time setup, and the button. The pull
@@ -229,6 +275,24 @@ export default function SubmitStep({
               <PlusIcon width={14} height={14} /> Add another page to this change
             </Button>
           </section>
+
+          {/* What a new page needs besides its text, asked here as well as in
+              Page details: it's what blocks sending, so it's where the
+              contributor is when they find out. Same fields, same page record. */}
+          {created.map((p) => (
+            <section key={p.path} className="rounded-xl border border-fw-border p-4">
+              <h3 className="text-sm font-semibold text-fw-strong">About your new page: {p.title}</h3>
+              <p className="mt-1 text-[0.8125rem] leading-relaxed text-fw-muted">
+                Needed before you send. You can also change these in Page details, on the Write step.
+              </p>
+              <div className="mt-4">
+                <DescriptionField id={`desc-${p.path}`} page={p} onChange={onChangeNewPage} />
+              </div>
+              <div className="mt-5">
+                <TagPicker page={p} onChange={onChangeNewPage} />
+              </div>
+            </section>
+          ))}
 
           <section>
             <label htmlFor="cw-note" className="text-sm font-semibold text-fw-strong">
@@ -515,3 +579,14 @@ const Link = ({ href, children }: { href: string; children: ReactNode }) => (
     {children}
   </a>
 )
+
+/** The contributor's profile in contributors.json, found by their GitHub account. */
+function profileSlug(directory: ContributorDirectory, login?: string): string | null {
+  if (!login) return null
+  const want = `https://github.com/${login}`.toLowerCase()
+  for (const [slug, entry] of Object.entries(directory)) {
+    if (entry?.github?.toLowerCase().replace(/\/+$/, '') === want) return slug
+  }
+  // Not by key: a slug that happens to match someone's login may be another person.
+  return null
+}

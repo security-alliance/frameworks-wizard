@@ -33,6 +33,9 @@ export interface SubmitFile {
   original: string
   /** The whole file with the contributor's edit. */
   content: string
+  /** Only on a new page, which goes in with an empty `original`: its sidebar
+   *  title and the entry it follows. The server writes the sidebar line. */
+  create?: { title: string; after: string } | { title: string; before: string }
 }
 
 export interface SubmitInput {

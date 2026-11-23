@@ -5,7 +5,8 @@ import { ArrowDown, Card, ChevronDown } from '../components/ui.js'
 import { annotateBlocks, changesOnly } from '../lib/inlineDiff.js'
 import { joinBlocks } from '../lib/blocks.js'
 import { headingSkips } from '../lib/headings.js'
-import type { Block, ContributorDirectory, Frontmatter } from '../lib/types.js'
+import { MAP_PLACEHOLDERS, placeholdersLeft, stripPlaceholders } from '../lib/placeholders.js'
+import type { Block, ContributorDirectory, Frontmatter, PageEntry } from '../lib/types.js'
 
 // Step: review changes.
 //
@@ -19,12 +20,19 @@ export default function ReviewStep({
   originalBody,
   contributors,
   dirty,
+  isNew = false,
+  mapNudge = null,
 }: {
   blocks: Block[]
   fm: Frontmatter
   originalBody: string
   contributors: ContributorDirectory
   dirty: boolean
+  /** A page written from scratch: its starter guidance should all be gone. */
+  isNew?: boolean
+  /** A new page its section map doesn't list yet: the overview that holds
+   *  the map, and the two ways on. Never blocks sending. */
+  mapNudge?: { where: PageEntry; onAdd: () => void; onSkip: () => void } | null
 }) {
   const [technical, setTechnical] = useState(false)
   const [pendingJump, setPendingJump] = useState(0)
@@ -39,12 +47,21 @@ export default function ReviewStep({
   const [wholePage, setWholePage] = useState(false)
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
   const changesView = dirty && !wholePage
+  // The page as it will be sent: without the placeholders still in it, a new
+  // page's empty parts or a section map's empty new row.
+  // A new page has nothing to compare with: everything in it is the
+  // contributor's, and marked against the template it read as the template
+  // crossed out. It shows plainly, whole.
   const shownBody = useMemo(
-    () => (changesView ? changesOnly(blocks, pieces, expanded) : body),
-    [changesView, blocks, pieces, expanded, body],
+    () =>
+      isNew
+        ? stripPlaceholders(joinBlocks(blocks))
+        : stripPlaceholders(changesView ? changesOnly(blocks, pieces, expanded) : body, MAP_PLACEHOLDERS),
+    [isNew, changesView, blocks, pieces, expanded, body],
   )
   const editedBody = useMemo(() => joinBlocks(blocks), [blocks])
   const skips = useMemo(() => headingSkips(editedBody), [editedBody])
+  const leftover = useMemo(() => (isNew ? placeholdersLeft(editedBody) : 0), [isNew, editedBody])
 
   // On a long page a one-word fix is invisible until you find it, so the count
   // is the control that takes you there — and takes you to the next one on each
@@ -85,14 +102,18 @@ export default function ReviewStep({
           into a column a word wide. */}
       <div className="flex flex-col gap-2 border-b border-fw-border px-4 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4 sm:px-5">
         <div className="min-w-0">
-          <h2 className="text-sm font-semibold text-fw-strong">Check your changes</h2>
+          <h2 className="text-sm font-semibold text-fw-strong">
+            {isNew ? 'Check your new page' : 'Check your changes'}
+          </h2>
           <p className="text-xs text-fw-faint">
-            {dirty
-              ? 'Your additions are highlighted, removals are crossed out.'
-              : 'You haven’t changed anything yet.'}
+            {isNew
+              ? 'The page as it will be published. Empty sections are left out.'
+              : dirty
+                ? 'Your additions are highlighted, removals are crossed out.'
+                : 'You haven’t changed anything yet.'}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2 sm:shrink-0 sm:flex-nowrap">
+        <div className={`flex flex-wrap items-center gap-2 sm:shrink-0 sm:flex-nowrap ${isNew ? 'hidden' : ''}`}>
         {dirty && !technical && (
           <div role="group" aria-label="What to show" className="flex rounded-full bg-fw-surface-2 p-0.5 text-xs font-medium">
             {[
@@ -138,7 +159,22 @@ export default function ReviewStep({
         </div>
       </div>
 
+      {mapNudge && <MapNudge {...mapNudge} />}
       {skips.length > 0 && <HeadingSkips skips={skips} />}
+      {leftover > 0 && (
+        // A new page's template parts still holding only their placeholder.
+        // They're left out of what's sent, so an empty one would just be
+        // missing from the page: said here, while it's one step back to write.
+        <div className="border-b border-fw-border bg-brand-soft/50 px-5 py-2.5 text-[0.7813rem] leading-relaxed text-fw-text">
+          <p className="font-semibold text-fw-strong">
+            {leftover === 1 ? '1 section still empty' : `${leftover} sections still empty`}
+          </p>
+          <p className="mt-0.5 text-fw-muted">
+            The grey hints in the editor show where. Empty sections are left out of what you send, so write them
+            or leave them out on purpose.
+          </p>
+        </div>
+      )}
 
       <div className="min-h-0 flex-1 overflow-hidden bg-fw-bg">
         {technical ? (
@@ -212,4 +248,37 @@ function changedElements(root: HTMLElement): HTMLElement[] {
     if (el.parentElement === article && stops[stops.length - 1] !== el) stops.push(el)
   }
   return stops
+}
+
+// Every overview maps its section's pages, one line each, and reviewers ask for
+// a new page's row when it's missing. Offered, not added: the row needs a line
+// only the contributor can write.
+function MapNudge({ where, onAdd, onSkip }: { where: PageEntry; onAdd: () => void; onSkip: () => void }) {
+  const name = [where.frameworkTitle, ...where.subdirTitles].join(' › ')
+  return (
+    <div className="border-b border-fw-border bg-brand-soft/50 px-5 py-3.5 text-[0.8125rem] leading-relaxed text-fw-text">
+      <p className="font-semibold text-fw-strong">One more step: list your page in the {name} overview</p>
+      <p className="mt-1 text-fw-muted">
+        Every overview has a map of its pages, each with one line on what it covers. Readers use it to find their
+        way, and reviewers will ask for it if it&apos;s missing. It&apos;s one line, and it goes out with this same
+        suggestion.
+      </p>
+      <div className="mt-2.5 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={onAdd}
+          className="rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-hover"
+        >
+          Add it to the map
+        </button>
+        <button
+          type="button"
+          onClick={onSkip}
+          className="rounded-lg border border-fw-border px-3 py-1.5 text-xs font-semibold text-fw-text hover:border-brand"
+        >
+          Send without it
+        </button>
+      </div>
+    </div>
+  )
 }

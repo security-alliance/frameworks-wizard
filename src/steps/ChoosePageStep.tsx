@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react'
-import { ArrowLeft, Card, SearchIcon } from '../components/ui.js'
+import { ArrowLeft, Card, PlusIcon, SearchIcon } from '../components/ui.js'
 import { titleize } from '../lib/format.js'
 import { toSegments } from '../lib/pageGroups.js'
 import EditingSummary from './choose/EditingSummary.js'
+import NewPageStart from './choose/NewPageStart.js'
+import type { NewPage } from '../lib/newPages.js'
 import type { FrameworkGroup, PageEntry } from '../lib/types.js'
 
 // Two-panel page browser: topics on the left, that topic's pages (grouped by
@@ -20,6 +22,8 @@ export default function ChoosePageStep({
   onPickPage,
   listFailed,
   onRetry,
+  onCreatePage,
+  onRemoveNew,
 }: {
   /** The page list couldn't be loaded from GitHub. */
   listFailed: boolean
@@ -30,8 +34,15 @@ export default function ChoosePageStep({
   current?: PageEntry
   onPickFramework: (framework: string) => void
   onPickPage: (path: string) => void
+  onCreatePage: (page: NewPage) => void
+  /** Drop a new page that hasn't been sent, with whatever was written in it. */
+  onRemoveNew: (path: string) => void
 }) {
   const [query, setQuery] = useState('')
+  // Starting a page that doesn't exist yet: a small panel opens where the
+  // button was, at the top for the framework itself or under a section for
+  // that section. `slot` says which button.
+  const [creating, setCreating] = useState<{ slot: string; folder: string; name: string } | null>(null)
   // On a phone the two panels can't sit side by side, and stacked in one box
   // the topic list took all of its height and buried the pages. So narrow
   // screens drill down instead: topics, then that topic's pages, with a way
@@ -42,6 +53,7 @@ export default function ChoosePageStep({
 
   const activeGroup = groups.find((g) => g.framework === framework)
   const segments = activeGroup ? toSegments(activeGroup.pages) : []
+  const taken = useMemo(() => new Set(groups.flatMap((g) => g.pages.map((p) => p.path))), [groups])
 
   // Flat cross-topic search results, capped so the list stays scannable.
   const results = useMemo(() => {
@@ -58,6 +70,24 @@ export default function ChoosePageStep({
       .slice(0, 60)
   }, [groups, q])
 
+  // The panel for a slot, if it's the one open, else its button.
+  const startHere = (slot: string, folder: string, name: string, button: (open: () => void) => React.ReactNode) =>
+    creating?.slot === slot && activeGroup ? (
+      <NewPageStart
+        folder={folder}
+        sectionName={name}
+        siblings={activeGroup.pages.filter((p) => !p.isNew && [activeGroup.framework, ...p.subdir].join('/') === folder)}
+        taken={taken}
+        onStart={(page) => {
+          setCreating(null)
+          onCreatePage(page)
+        }}
+        onCancel={() => setCreating(null)}
+      />
+    ) : (
+      button(() => setCreating({ slot, folder, name }))
+    )
+
   return (
     <Card className="mx-auto max-w-3xl overflow-hidden p-0">
       <div className="border-b border-fw-border px-6 py-5">
@@ -66,7 +96,7 @@ export default function ChoosePageStep({
         </h2>
         <p className="mt-1.5 text-sm text-fw-muted">
           Pick a topic<span className="hidden sm:inline"> on the left</span>, then a
-          page. Or search for one by name.
+          page. Or start a new one where it belongs.
         </p>
 
         <div className="relative mt-4">
@@ -155,7 +185,19 @@ export default function ChoosePageStep({
                 Select a topic to see its pages.
               </div>
             ) : (
-              segments.map((seg, i) => (
+              <>
+              {/* First, so it's there before anyone scrolls a long framework. */}
+              {startHere('top', activeGroup.framework, activeGroup.title, (open) => (
+                <button
+                  type="button"
+                  onClick={open}
+                  className="mx-3 mb-1 mt-1 flex w-[calc(100%-1.5rem)] items-center gap-2 rounded-lg border border-dashed border-fw-border px-3 py-2 text-left text-sm font-medium text-brand-hover transition-colors hover:border-brand/60"
+                >
+                  <PlusIcon width={14} height={14} />
+                  New page in {activeGroup.title}
+                </button>
+              ))}
+              {segments.map((seg, i) => (
                 <div key={`${seg.key || '_root'}-${i}`} className="mb-1">
                   {/* The framework's own pages after a subsection (DevSecOps'
                       Code Signing… after Developer-Targeted Intrusions) get the
@@ -171,10 +213,25 @@ export default function ChoosePageStep({
                       page={p}
                       active={p.path === path}
                       onPick={onPickPage}
+                      onRemove={p.isNew ? () => onRemoveNew(p.path) : undefined}
                     />
                   ))}
+                  {/* Frameworks like DevSecOps keep most pages in subfolders,
+                      so each has its own way in, right under its pages. */}
+                  {seg.key &&
+                    startHere(`seg-${i}`, `${activeGroup.framework}/${seg.key}`, seg.label, (open) => (
+                      <button
+                        type="button"
+                        onClick={open}
+                        className="flex w-full items-center gap-2 px-5 py-1.5 text-left text-xs font-medium text-brand-hover transition-colors hover:bg-fw-surface-2"
+                      >
+                        <PlusIcon width={12} height={12} />
+                        New page in {seg.label}
+                      </button>
+                    ))}
                 </div>
-              ))
+              ))}
+              </>
             )}
           </div>
         </div>
@@ -221,13 +278,15 @@ function PageRow({
   active,
   onPick,
   context,
+  onRemove,
 }: {
   page: PageEntry
   active: boolean
   onPick: (path: string) => void
   context?: string
+  onRemove?: () => void
 }) {
-  return (
+  const row = (
     <button
       onClick={() => onPick(page.path)}
       className={`flex w-full items-center gap-2 px-5 py-1.5 text-left text-sm transition-colors ${
@@ -244,6 +303,11 @@ function PageRow({
       {/* Narrow: the trail goes under the title, so neither squeezes the other. */}
       <span className="flex min-w-0 flex-1 flex-col sm:flex-row sm:items-center">
         <span className="truncate">{page.title}</span>
+        {page.isNew && (
+          <span className="ml-2 shrink-0 self-start rounded-full bg-brand-soft px-1.5 py-px text-[0.625rem] font-semibold uppercase tracking-wide text-brand-hover sm:self-auto">
+            New
+          </span>
+        )}
         {context && (
           <span className="truncate text-xs text-fw-faint sm:ml-auto sm:max-w-[50%] sm:shrink-0 sm:pl-3">
             {context}
@@ -251,5 +315,19 @@ function PageRow({
         )}
       </span>
     </button>
+  )
+  if (!onRemove) return row
+  // A new page exists only in this browser, so this is the only way to drop it.
+  return (
+    <div className="group/row relative">
+      {row}
+      <button
+        type="button"
+        onClick={onRemove}
+        className="absolute right-3 top-1/2 hidden -translate-y-1/2 rounded px-1.5 py-0.5 text-xs text-fw-faint hover:bg-fw-surface-2 hover:text-del group-hover/row:block group-focus-within/row:block"
+      >
+        Remove
+      </button>
+    </div>
   )
 }

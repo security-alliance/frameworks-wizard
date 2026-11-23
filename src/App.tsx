@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   fetchPageList,
-  fetchRawPage,
   splitFrontmatter,
   fetchContributors,
   pageTrail,
@@ -9,6 +8,7 @@ import {
 } from './lib/github.js'
 import { parseFrontmatter } from './lib/frontmatter.js'
 import { splitBlocks, updateBlock, isDirty, syncChecklistImport } from './lib/blocks.js'
+import type { DetailsStatus } from './components/editor/PageDetails.js'
 import { wrapWidth } from './lib/markdown.js'
 import { annotateBlocks } from './lib/inlineDiff.js'
 import {
@@ -22,6 +22,21 @@ import {
   saveSuggestion,
 } from './lib/drafts.js'
 import type { Draft, DraftSummary, Suggestion } from './lib/drafts.js'
+import {
+  buildFrontmatter,
+  linkOf,
+  listNewPages,
+  loadPage,
+  newPageRaw,
+  readNewPage,
+  removeNewPage,
+  saveNewPage,
+  suggestTags,
+} from './lib/newPages.js'
+import { currentBody, fillMapRow, findMapFile, insertMapRow, linksTo } from './lib/sectionMap.js'
+import { PLACEHOLDERS } from './lib/placeholders.js'
+import { joinBlocks } from './lib/blocks.js'
+import type { NewPage } from './lib/newPages.js'
 import { forgetSent, lastSent, rememberSent } from './lib/send.js'
 import type { Sent } from './lib/send.js'
 import { useAuth } from './lib/useAuth.js'
@@ -45,6 +60,7 @@ import type {
   ContributorDirectory,
   FrameworkGroup,
   Frontmatter,
+  PageEntry,
 } from './lib/types.js'
 
 // The page the editor opens if the contributor hasn't picked one.
@@ -65,7 +81,11 @@ export default function App() {
   // thing you switch on when you settle down to write.
   const [focus, setFocus] = useState(false)
 
-  const [groups, setGroups] = useState<FrameworkGroup[]>([])
+  const [githubGroups, setGroups] = useState<FrameworkGroup[]>([])
+  // Pages written from scratch in this browser, listed in their framework
+  // where they'll appear in the sidebar. See newPages.ts.
+  const [newPages, setNewPages] = useState<NewPage[]>(listNewPages)
+  const groups = useMemo(() => withNewPages(githubGroups, newPages), [githubGroups, newPages])
   const [contributors, setContributors] = useState<ContributorDirectory>({})
 
   // What the contributor says about their change, their answer to the one ask
@@ -133,12 +153,17 @@ export default function App() {
       .catch((e) => console.error('Contributors failed:', e))
   }, [loadPageList])
 
+  // Bumped to load the open page afresh, with its draft: after the wizard
+  // itself changes a section (filling a section-map row), whose editor only
+  // reads its text when it opens.
+  const [reloadKey, setReloadKey] = useState(0)
+
   // (Re)load the selected page whenever the path changes.
   useEffect(() => {
     let cancelled = false
     setLoading(true)
     setError(null)
-    fetchRawPage(path)
+    loadPage(path)
       .then((raw) => {
         if (cancelled) return
         const { frontmatter: fmRaw, body } = splitFrontmatter(raw)
@@ -169,7 +194,7 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [path])
+  }, [path, reloadKey])
 
   const dirty = useMemo(() => isDirty(blocks), [blocks])
   // Measured once per page: what width the page is wrapped at, so an edited
@@ -296,28 +321,45 @@ export default function App() {
   // note are kept until then, and the menus show "Draft discarded" with Undo
   // where the row was.
   const [discarded, setDiscarded] = useState<
-    { summary: DraftSummary; draft: Draft; suggestion: Suggestion }[]
+    { summary: DraftSummary; draft: Draft; suggestion: Suggestion; page?: NewPage }[]
   >([])
 
+  // Discarding a new page's draft discards the page: it exists only in this
+  // browser, and an empty "New" page left in the list reads as a bug.
   function discardDraft(target: string) {
     const draft = readDraft(target)
     const summary = drafts.find((d) => d.path === target)
+    const page = readNewPage(target) ?? undefined
     if (draft && summary) {
-      const entry = { summary, draft, suggestion: { note, answers, leftOut } }
+      const entry = { summary, draft, suggestion: { note, answers, leftOut }, page }
       setDiscarded((d) => [...d.filter((x) => x.summary.path !== target), entry])
       setTimeout(() => setDiscarded((d) => d.filter((x) => x !== entry)), 6000)
     }
     clearDraft(target)
-    if (target === path) {
+    if (page) {
+      removeNewPage(target)
+      setNewPages(listNewPages())
+      if (target === path) leaveRemovedPage(target)
+    } else if (target === path) {
       setBlocks(splitBlocks(originalBody))
       setRestored(null)
     }
     forgetSuggestionIfEmpty()
   }
 
+  // Off a new page that's gone, to the first page of its framework.
+  function leaveRemovedPage(target: string) {
+    const group = githubGroups.find((g) => target.startsWith(`docs/pages/${g.framework}/`))
+    goToPage(group?.pages[0]?.path ?? DEFAULT_PAGE)
+  }
+
   function undoDiscard(target: string) {
     const entry = discarded.find((x) => x.summary.path === target)
     if (!entry) return
+    if (entry.page) {
+      saveNewPage(entry.page)
+      setNewPages(listNewPages())
+    }
     restoreDraft(target, entry.draft)
     setNote(entry.suggestion.note)
     setAnswers(entry.suggestion.answers)
@@ -329,12 +371,159 @@ export default function App() {
     setDrafts(listDrafts())
   }
 
+  function createPage(page: NewPage) {
+    saveNewPage(page)
+    setNewPages(listNewPages())
+    goToPage(page.path)
+    goTo(stepIndex('edit'))
+    // Tags start as the ones the section's other pages use most, unless the
+    // contributor has picked some by the time they're found.
+    suggestTags(sectionPages(page.path).map((p) => p.path)).then((tags) => {
+      const now = readNewPage(page.path)
+      if (now && now.tags === null) {
+        saveNewPage({ ...now, tags })
+        setNewPages(listNewPages())
+      }
+    })
+  }
+
+  // The section's pages in the sidebar, without new ones: what a new page can
+  // be placed among, and what its tags are suggested from.
+  const sectionPages = (pagePath: string) => {
+    const folder = pagePath.slice(0, pagePath.lastIndexOf('/'))
+    return githubGroups.flatMap((g) => g.pages).filter((p) => p.path.slice(0, p.path.lastIndexOf('/')) === folder)
+  }
+
+  // The words of a new page changed: its frontmatter is rebuilt from them. The
+  // body, and so every draft over it, is untouched.
+  function updatePageDetails(page: NewPage) {
+    saveNewPage(page)
+    setNewPages(listNewPages())
+    if (page.path === path) {
+      setFm(parseFrontmatter(buildFrontmatter(page)))
+      setOriginalRaw(newPageRaw(page))
+    }
+  }
+
+  // A new page only exists here, so removing it is final: its draft goes too.
+  function removePage(target: string) {
+    clearDraft(target)
+    removeNewPage(target)
+    setNewPages(listNewPages())
+    if (target === path) leaveRemovedPage(target)
+    forgetSuggestionIfEmpty()
+  }
+
+  // The open new page's section map: which overview holds it, and whether it
+  // lists the page yet. Worked out again whenever a draft is saved, since
+  // adding the row, or removing it, is a draft of the overview.
+  const openNew = newPages.find((p) => p.path === path)
+  const [map, setMap] = useState<{ page: string; file: string | null; listed: boolean } | null>(null)
+  const draftsKey = drafts.map((d) => `${d.path}@${d.savedAt}`).join('|')
+  useEffect(() => {
+    if (!openNew || githubGroups.length === 0) return
+    let live = true
+    const existing = new Set(githubGroups.flatMap((g) => g.pages.map((p) => p.path)))
+    const route = linkOf(openNew.path)
+    findMapFile(openNew.path, existing)
+      .then(async (file) => ({ file, listed: file ? linksTo(await currentBody(file), route) : false }))
+      .then((r) => live && setMap({ page: openNew.path, ...r }))
+      .catch(() => live && setMap({ page: openNew.path, file: null, listed: false }))
+    return () => {
+      live = false
+    }
+  }, [openNew?.path, githubGroups, draftsKey])
+  const mapFor = openNew && map?.page === openNew.path ? map : null
+
+  const details: DetailsStatus = {
+    title: !!openNew?.title.trim(),
+    tags: (openNew?.tags?.length ?? 0) > 0,
+    description: !!openNew?.description.trim(),
+    listed: mapFor ? (mapFor.file ? mapFor.listed : true) : null,
+  }
+
+  // Where to scroll once the page opens: the new row in a section map.
+  const [scrollTo, setScrollTo] = useState<string | null>(null)
+  useEffect(() => {
+    if (!scrollTo || loading) return
+    const t = setTimeout(() => {
+      document.querySelector(`.fw-editor a[href="${scrollTo}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      setScrollTo(null)
+    }, 300)
+    return () => clearTimeout(t)
+  }, [scrollTo, loading])
+
+  // "Add it to the map": the overview joins the suggestion as a draft with one
+  // row for the new page, placed after the nearest page before it in the
+  // sidebar that the map lists, and opens there.
+  async function addToMap(pagePath: string) {
+    const page = readNewPage(pagePath)
+    const file = map?.page === pagePath ? map.file : null
+    if (!page || !file) return
+    const route = linkOf(pagePath)
+    const group = groups.find((g) => pagePath.startsWith(`docs/pages/${g.framework}/`))
+    const order = group?.pages ?? []
+    const at = order.findIndex((p) => p.path === pagePath)
+    const before = order.slice(0, Math.max(at, 0)).reverse().map((p) => linkOf(p.path))
+    try {
+      const { body } = splitFrontmatter(await loadPage(file))
+      const draft = readDraft(file)
+      const fileBlocks = draft ? applyDraft(splitBlocks(body), draft).blocks : splitBlocks(body)
+      if (linksTo(joinBlocks(fileBlocks), route)) return openMapAt(file, route)
+      for (const b of fileBlocks) {
+        const next = insertMapRow(b.text, route, page.title, before)
+        if (next !== null) {
+          saveDraft(file, updateBlock(fileBlocks, b.id, next))
+          setDrafts(listDrafts())
+          return openMapAt(file, route)
+        }
+      }
+    } catch (e) {
+      console.error('Adding to the section map failed:', e)
+    }
+  }
+
+  function openMapAt(file: string, route: string) {
+    setScrollTo(route)
+    if (file === path) setReloadKey((k) => k + 1)
+    goToPage(file)
+    goTo(stepIndex('edit'))
+  }
+
+  // On a section map holding a new page's row that's still a placeholder.
+  const rowFor = newPages.find((p) => {
+    const route = linkOf(p.path)
+    return blocks.some((b) => b.text.includes(`](${route})`) && b.text.includes(PLACEHOLDERS.mapRow))
+  })
+  const mapRow = rowFor
+    ? {
+        title: rowFor.title,
+        onBack: () => goToPage(rowFor.path),
+        onUseDescription: rowFor.description.trim()
+          ? () => {
+              const route = linkOf(rowFor.path)
+              const b = blocks.find((x) => x.text.includes(`](${route})`))
+              if (!b) return
+              saveDraft(path, updateBlock(blocks, b.id, fillMapRow(b.text, route, rowFor.description.trim())))
+              setDrafts(listDrafts())
+              setReloadKey((k) => k + 1)
+            }
+          : undefined,
+      }
+    : null
+
   // Once it's sent, the change lives in the pull request, and the drafts sent
   // have done their job. Clearing them is what stops the drafts menu offering
   // to send the same thing twice. Unticked drafts stay, to be sent on their
   // own, but the note described what went out, so it goes.
   function finishSend(result: Sent) {
     for (const p of result.paths) clearDraft(p)
+    // A new page sent is in the pull request now. Its record goes, and if it was
+    // open, the editor moves off it: there's nothing left here to load.
+    const sentNew = result.paths.filter((p) => readNewPage(p))
+    for (const p of sentNew) removeNewPage(p)
+    if (sentNew.length) setNewPages(listNewPages())
+    if (sentNew.includes(path)) leaveRemovedPage(path)
     if (result.paths.includes(path)) {
       setBlocks(splitBlocks(originalBody))
       setRestored(null)
@@ -397,6 +586,11 @@ export default function App() {
     const t = setTimeout(() => {
       setPersisted(saveDraft(path, blocks))
       setDrafts(listDrafts())
+      // A new page's title is its heading: the sidebar and the frontmatter
+      // follow it as it's edited.
+      const created = readNewPage(path)
+      const heading = blocks.find((b) => b.kind === 'title')?.text.replace(/^#\s+/, '').trim()
+      if (created && heading && heading !== created.title) updatePageDetails({ ...created, title: heading })
     }, 700)
     return () => clearTimeout(t)
   }, [blocks, loading, error, restored, path])
@@ -468,6 +662,8 @@ export default function App() {
               onPickPage={goToPage}
               listFailed={listFailed}
               onRetry={loadPageList}
+              onCreatePage={createPage}
+              onRemoveNew={removePage}
             />
           )}
           {step.id === 'edit' && (
@@ -480,6 +676,12 @@ export default function App() {
               dirty={dirty}
               onReset={resetEdits}
               current={current}
+              newPage={openNew}
+              siblings={openNew ? sectionPages(openNew.path) : []}
+              details={details}
+              onChangeDetails={updatePageDetails}
+              onAddToMap={mapFor?.file ? () => addToMap(path) : undefined}
+              mapRow={mapRow}
               focus={focused}
               onToggleFocus={() => setFocus((f) => !f)}
               restored={restored}
@@ -495,6 +697,16 @@ export default function App() {
               originalBody={originalBody}
               contributors={contributors}
               dirty={dirty}
+              isNew={!!current?.isNew}
+              mapNudge={
+                openNew && mapFor?.file && !mapFor.listed && !openNew.mapSkipped
+                  ? {
+                      where: pageEntry(mapFor.file),
+                      onAdd: () => addToMap(path),
+                      onSkip: () => updatePageDetails({ ...openNew, mapSkipped: true }),
+                    }
+                  : null
+              }
             />
           )}
           {step.id === 'submit' && (
@@ -527,6 +739,7 @@ export default function App() {
                 goTo(stepIndex('review'))
               }}
               onSent={finishSend}
+              onChangeNewPage={updatePageDetails}
             />
           )}
           {step.id === 'done' && (
@@ -575,4 +788,38 @@ export default function App() {
       <ScrollNav />
     </div>
   )
+}
+
+/**
+ * The page list with this browser's new pages in it, each placed where it will
+ * show in the sidebar: after the page it was put after, and after any other new
+ * page already placed there. Names come from the framework's own pages, so a new
+ * page reads "Operational Security › Passwords" like its neighbours.
+ */
+function withNewPages(groups: FrameworkGroup[], created: NewPage[]): FrameworkGroup[] {
+  if (!created.length) return groups
+  return groups.map((g) => {
+    const mine = created.filter((n) => n.path.startsWith(`docs/pages/${g.framework}/`))
+    if (!mine.length) return g
+    const pages = [...g.pages]
+    for (const n of mine) {
+      const base = toPageEntry(n.path)
+      const sibling = pages.find((p) => p.subdir.join('/') === base.subdir.join('/'))
+      const entry: PageEntry = {
+        ...base,
+        title: n.title,
+        frameworkTitle: g.title,
+        subdirTitles: sibling?.subdirTitles ?? base.subdirTitles,
+        isNew: true,
+      }
+      // First in its section goes before the section's first page.
+      const folder = n.path.slice(0, n.path.lastIndexOf('/'))
+      const first = pages.findIndex((p) => !p.isNew && p.path.slice(0, p.path.lastIndexOf('/')) === folder)
+      let at = n.after ? pages.findIndex((p) => !p.isNew && linkOf(p.path) === n.after) : first - 1
+      if (n.after && at < 0) at = pages.length - 1
+      while (pages[at + 1]?.isNew) at++
+      pages.splice(at + 1, 0, entry)
+    }
+    return { ...g, pages }
+  })
 }

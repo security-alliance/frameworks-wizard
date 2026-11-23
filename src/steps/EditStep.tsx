@@ -2,6 +2,9 @@ import { useEffect, useId, useMemo, useState } from 'react'
 import BlockEditor from '../components/editor/BlockEditor.js'
 import HelpPanel from '../components/editor/HelpPanel.js'
 import Toolbar from '../components/editor/Toolbar.js'
+import PageDetails, { detailsLeft } from '../components/editor/PageDetails.js'
+import type { DetailsStatus } from '../components/editor/PageDetails.js'
+import type { NewPage } from '../lib/newPages.js'
 import {
   Card,
   ExternalIcon,
@@ -34,6 +37,12 @@ export default function EditStep({
   dirty,
   onReset,
   current,
+  newPage,
+  siblings,
+  details,
+  onChangeDetails,
+  onAddToMap,
+  mapRow,
   focus,
   onToggleFocus,
   restored,
@@ -50,6 +59,17 @@ export default function EditStep({
   dirty: boolean
   onReset: () => void
   current?: PageEntry
+  /** Set when the open page is one written from scratch. */
+  newPage?: NewPage
+  /** Its section's other pages in the sidebar, for Page details. */
+  siblings: PageEntry[]
+  /** What Page details still needs, for its checklist and the badge. */
+  details: DetailsStatus
+  onChangeDetails: (page: NewPage) => void
+  onAddToMap?: () => void
+  /** Set when this page is a section map holding a new page's row: which
+   *  page, a way back to it, and its description to put in the row. */
+  mapRow?: { title: string; onBack: () => void; onUseDescription?: () => void } | null
   /** Everything that isn't the page is hidden. */
   focus: boolean
   onToggleFocus: () => void
@@ -86,10 +106,16 @@ export default function EditStep({
   // it there's no room beside the card, and it floats over the page under the
   // toolbar instead (anchored to the sticky header, so it's on screen wherever
   // the page is scrolled to), capped at the screen's height with its own scroll.
-  const [helpOpen, setHelpOpen] = useState(false)
+  // Page details, for a new page, docks in the same place: one side panel at a
+  // time.
+  const [panel, setPanel] = useState<'help' | 'details' | null>(null)
+  const helpOpen = panel !== null
   const helpId = useId()
-  const toggleHelp = () => setHelpOpen((o) => !o)
-  const closeHelp = () => setHelpOpen(false)
+  const toggleHelp = () => setPanel((p) => (p === 'help' ? null : 'help'))
+  const toggleDetails = () => setPanel((p) => (p === 'details' ? null : 'details'))
+  useEffect(() => {
+    if (!newPage && panel === 'details') setPanel(null)
+  }, [newPage, panel])
   // The page's scroll arrows sit in the same bottom-right corner the panel
   // docks into, and drew over its last lines. They step aside while it's open
   // (see `fw-scrollnav` in index.css): it's opened to be read, and closing it
@@ -98,6 +124,23 @@ export default function EditStep({
     document.documentElement.toggleAttribute('data-help-open', helpOpen)
     return () => document.documentElement.removeAttribute('data-help-open')
   }, [helpOpen])
+  const closeHelp = () => setPanel(null)
+  const left = detailsLeft(details)
+  const sidePanel = (where: 'in' | 'out', className: string) =>
+    panel === 'details' && newPage ? (
+      <PageDetails
+        id={`${helpId}-${where}`}
+        page={newPage}
+        siblings={siblings}
+        status={details}
+        onChange={onChangeDetails}
+        onAddToMap={onAddToMap}
+        onClose={closeHelp}
+        className={className}
+      />
+    ) : panel === 'help' ? (
+      <HelpPanel id={`${helpId}-${where}`} onClose={closeHelp} className={className} />
+    ) : null
   const side = focus
     ? { row: 'min-[1720px]:-mx-[6.5rem] min-[1720px]:flex min-[1720px]:items-start min-[1720px]:justify-center min-[1720px]:gap-4', out: 'hidden min-[1720px]:block', in: 'min-[1720px]:hidden' }
     : { row: 'xl:-mx-14 xl:flex xl:items-start xl:justify-center xl:gap-4', out: 'hidden xl:block', in: 'xl:hidden' }
@@ -131,6 +174,28 @@ export default function EditStep({
             <PageIdentity current={current} />
 
             <div className="flex shrink-0 items-center gap-2">
+              {/* A new page's description, tags and place live in its
+                  frontmatter and the sidebar, which the editor doesn't show.
+                  The badge counts what's still missing. */}
+              {newPage && (
+                <button
+                  onClick={toggleDetails}
+                  aria-expanded={panel === 'details'}
+                  aria-controls={`${helpId}-out ${helpId}-in`}
+                  className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
+                    panel === 'details'
+                      ? 'border-brand bg-brand/15 text-fw-strong'
+                      : 'border-fw-border text-fw-text hover:border-brand/60'
+                  }`}
+                >
+                  Page details
+                  {left > 0 && (
+                    <span className="rounded-full bg-brand px-1.5 text-[0.625rem] font-semibold text-white">
+                      {left} left
+                    </span>
+                  )}
+                </button>
+              )}
               {dirty && (
                 <button
                   onClick={onReset}
@@ -166,7 +231,7 @@ export default function EditStep({
                 </button>
               )}
 
-              {current && (
+              {current && !current.isNew && (
                 <a
                   href={`${SITE_URL}/${current.rel.replace(/\.mdx$/, '')}`}
                   target="_blank"
@@ -183,17 +248,14 @@ export default function EditStep({
           {!loading && !error && (
             <Toolbar
               editor={activeEditor}
-              helpOpen={helpOpen}
+              helpOpen={panel === 'help'}
               helpIds={`${helpId}-out ${helpId}-in`}
               onToggleHelp={toggleHelp}
             />
           )}
-          {helpOpen && (
-            <HelpPanel
-              id={`${helpId}-in`}
-              onClose={closeHelp}
-              className={`fw-card-shadow absolute right-3 top-full z-30 mt-1.5 max-h-[calc(100vh-9rem)] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-fw-border bg-fw-surface p-4 ${side.in}`}
-            />
+          {sidePanel(
+            'in',
+            `fw-card-shadow absolute right-3 top-full z-30 mt-1.5 max-h-[calc(100vh-9rem)] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-fw-border bg-fw-surface p-4 ${side.in}`,
           )}
         </div>
 
@@ -205,23 +267,28 @@ export default function EditStep({
         ) : loading ? (
           <Centered>Opening the page…</Centered>
         ) : (
-          <BlockEditor
-            blocks={blocks}
-            wrap={wrap}
-            onChangeBlock={onChangeBlock}
-            focus={focus}
-            onFocusEditor={setActiveEditor}
-            intro={!focus && <EditTip />}
-          />
+          <>
+            {mapRow && <MapRowBanner {...mapRow} />}
+            <BlockEditor
+              blocks={blocks}
+              wrap={wrap}
+              onChangeBlock={onChangeBlock}
+              focus={focus}
+              onFocusEditor={setActiveEditor}
+              intro={!focus && <EditTip />}
+            />
+            {newPage && (
+              <p className="mx-auto mb-6 w-full max-w-3xl px-8 text-xs text-fw-faint">
+                Grey text is a hint. It disappears as you type and is never saved.
+              </p>
+            )}
+          </>
         )}
       </Card>
       </div>
-      {helpOpen && (
-        <HelpPanel
-          id={`${helpId}-out`}
-          onClose={closeHelp}
-          className={`fw-card-shadow w-80 shrink-0 rounded-2xl border border-fw-border bg-fw-surface p-5 xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto ${side.out}`}
-        />
+      {sidePanel(
+        'out',
+        `fw-card-shadow w-80 shrink-0 rounded-2xl border border-fw-border bg-fw-surface p-5 xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto ${side.out}`,
       )}
     </div>
   )
@@ -369,8 +436,13 @@ function PageIdentity({ current }: { current?: PageEntry }) {
   }
   return (
     <div className="min-w-0">
-      <h2 className="truncate text-sm font-semibold text-fw-strong">
-        {current.title}
+      <h2 className="flex min-w-0 items-center gap-2 text-sm font-semibold text-fw-strong">
+        <span className="truncate">{current.title}</span>
+        {current.isNew && (
+          <span className="shrink-0 rounded-full bg-add-soft px-1.5 py-px text-[0.625rem] font-semibold text-add">
+            New page
+          </span>
+        )}
       </h2>
       <p className="truncate text-[0.6875rem] text-fw-faint">
         {[current.frameworkTitle, ...current.subdirTitles].join(' › ')} · nothing is
@@ -384,6 +456,38 @@ function Centered({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-64 items-center justify-center px-6 text-center text-sm text-fw-muted">
       <div>{children}</div>
+    </div>
+  )
+}
+
+// On a section map opened to add a new page's row: whose row it is, the way
+// back, and the page's description, which usually fits the row's one line.
+function MapRowBanner({
+  title,
+  onBack,
+  onUseDescription,
+}: {
+  title: string
+  onBack: () => void
+  onUseDescription?: () => void
+}) {
+  return (
+    <div className="mx-auto mt-4 flex w-full max-w-3xl flex-wrap items-center gap-x-4 gap-y-1 rounded-lg bg-brand-soft/50 px-4 py-2.5 text-[0.8125rem] text-fw-text">
+      <span className="min-w-0 flex-1">
+        Part of your suggestion, with <span className="font-semibold">{title}</span>. Write one line for its
+        row in the map.
+        {onUseDescription && (
+          <>
+            {' '}
+            <button type="button" onClick={onUseDescription} className="font-medium text-brand-hover underline">
+              Use your page description
+            </button>
+          </>
+        )}
+      </span>
+      <button type="button" onClick={onBack} className="font-medium text-brand-hover underline">
+        Back to your new page
+      </button>
     </div>
   )
 }

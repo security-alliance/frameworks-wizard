@@ -4,6 +4,7 @@ import type { Editor } from '@tiptap/react'
 import {
   editorMarkdown,
   markExistingChecklists,
+  markPlaceholders,
   pasteCodeEditorMarkdown,
   proseExtensions,
   setPageContext,
@@ -76,7 +77,9 @@ export default function ProseBlock({
       },
       onCreate({ editor }) {
         // Before the safety check, which compares against the page as written:
-        // a bare checklist already in the page stays bare.
+        // a bare checklist already in the page stays bare, and a new page's
+        // placeholders show as grey hints (written back as the same text).
+        markPlaceholders(editor)
         markExistingChecklists(editor)
         setSafe(sameContent(editorMarkdown(editor), dedent(block.text, indent)))
         guard.current = true

@@ -4,7 +4,6 @@ import { REPO, BRANCH } from '../../lib/github.js'
 import {
   buildPrBody,
   prParts,
-  TEMPLATE_LINES,
   TEMPLATE_SECTIONS,
   written,
 } from '../../lib/prTemplate.js'
@@ -126,7 +125,7 @@ export default function PrPreview({
                       {parts.pages.length === 1 ? 'Page' : 'Pages'}:
                     </span>{' '}
                     <span className="font-mono text-[0.6875rem]">
-                      {parts.pages.map((x) => x.rel).join(', ')}
+                      {parts.pages.map((x) => (x.isNew ? `${x.rel} (new page)` : x.rel)).join(', ')}
                     </span>
                   </li>
                 )}
@@ -145,12 +144,20 @@ export default function PrPreview({
                   The contributor has offered to take it on.
                 </p>
               )}
+              {parts.attribution && (
+                <p className="mt-2 text-[0.75rem] text-fw-muted">
+                  <span className="font-semibold text-fw-text">Attribution:</span>{' '}
+                  {parts.attribution.replace(/`/g, '')}
+                </p>
+              )}
             </section>
 
             <section>
               <Heading>{TEMPLATE_SECTIONS.type}</Heading>
-              <ul className="mt-1.5">
-                <Tick>{TEMPLATE_LINES.type}</Tick>
+              <ul className="mt-1.5 space-y-1.5">
+                {parts.types.map((line) => (
+                  <Tick key={line}>{line}</Tick>
+                ))}
               </ul>
             </section>
 
@@ -159,7 +166,8 @@ export default function PrPreview({
                 <Heading>{TEMPLATE_SECTIONS.applicable}</Heading>
                 <ul className="mt-1.5 space-y-1.5">
                   {parts.applicable.map((line) => (
-                    <Tick key={line}>{line}</Tick>
+                    // Markdown backticks read as stray marks in the preview.
+                    <Tick key={line}>{line.replace(/`/g, '')}</Tick>
                   ))}
                 </ul>
               </section>

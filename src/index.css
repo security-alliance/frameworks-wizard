@@ -510,6 +510,33 @@ body {
   display: none;
 }
 
+/* Placeholders on a new page (tiptapConfig.ts): a grey hint where an empty
+   line is, or after real text such as the Key Takeaway label. Never saved.
+   The hint floats across the full width with a margin that cancels that
+   width, so the cursor's line sits on top of its first line instead of below
+   it, and `flow-root` makes the empty line as tall as the hint, so a hint long
+   enough to wrap pushes the next line down instead of spilling over it.
+   (A grid did the height but Chrome gives the cursor's line break a row of
+   its own: an empty line under every hint. The usual zero-height float
+   spilled over the next line.) */
+.fw-editor .fw-placeholder {
+  display: flow-root;
+}
+.fw-editor .fw-placeholder::before {
+  content: attr(data-placeholder);
+  color: var(--fw-faint);
+  float: left;
+  width: 100%;
+  margin-right: -100%;
+  pointer-events: none;
+}
+.fw-editor .fw-placeholder-after {
+  color: var(--fw-faint);
+  font-weight: 400;
+  pointer-events: none;
+  user-select: none;
+}
+
 /* The site's ContributeFooter, as the preview draws it. Its own CSS (copied
    from the frameworks repo, kept as is) caps the content at 500px; the wizard
    renders text up to 125% larger (see `html`), so its two buttons no longer

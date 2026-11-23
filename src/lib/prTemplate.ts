@@ -27,9 +27,8 @@ import type {
 //   maintainer can see who to loop in when it matters.
 //
 //   "Outline change: updated `vocs.config.ts` with the `dev: true` parameter"
-//   — editing a page can't change which pages exist or how they're ordered.
-//   There is no version of this question that means anything here, so it isn't
-//   asked, and the line is left out.
+//   — true, and ticked, only when the suggestion adds a page: the wizard writes
+//   that sidebar line itself. Editing a page can't change the outline.
 //
 // The body follows the template's own sections, in the template's words, so it
 // reads like every other pull request a maintainer gets. Only lines that apply
@@ -72,9 +71,11 @@ export const TEMPLATE_SECTIONS = {
 }
 
 export const TEMPLATE_LINES = {
-  // The wizard only ever edits a page that exists.
   type: 'Edit to existing content',
+  newContent: 'New content',
+  outline: 'Outline / structure change',
   steward: 'Framework has a steward: asked them to review',
+  sidebar: 'Outline change: updated `vocs.config.ts` with the `dev: true` parameter',
 }
 
 /* ------------------------------------------------------------------ *
@@ -157,7 +158,13 @@ export interface PrPage {
  */
 export function buildPrTitle(pages: PrPage[]): string {
   if (pages.length === 0) return 'docs: update page'
-  if (pages.length === 1) return `docs(${pages[0].page.framework}): update ${pages[0].page.title}`
+  // A suggestion adding a page is about that page, even when it also edits
+  // others along the way (its row in the section map, say): `add <title>`, the
+  // way a hand-written PR adding a page reads.
+  const created = pages.filter((p) => p.page.isNew)
+  if (created.length === 1) return `docs(${created[0].page.framework}): add ${created[0].page.title}`
+  const verb = created.length === pages.length ? 'add' : 'update'
+  if (pages.length === 1) return `docs(${pages[0].page.framework}): ${verb} ${pages[0].page.title}`
   const lines = new Map<string, number>()
   for (const p of pages) {
     lines.set(p.page.framework, (lines.get(p.page.framework) ?? 0) + p.added + p.removed)
@@ -166,7 +173,7 @@ export function buildPrTitle(pages: PrPage[]): string {
   let scope = pages[0].page.framework
   for (const [fw, n] of lines) if (n > lines.get(scope)!) scope = fw
   const across = lines.size > 1 ? ` across ${lines.size} frameworks` : ''
-  return `docs(${scope}): update ${pages.length} pages${across}`
+  return `docs(${scope}): ${verb} ${pages.length} pages${across}`
 }
 
 /** A framework's stewards, as found by `frameworkStewards`. */
@@ -186,6 +193,8 @@ export interface PrBodyInput {
   credited?: Person[]
   /** The framework the contributor offered to look after, if they did. */
   volunteer?: string | null
+  /** A new page whose author has no profile to credit them under yet. */
+  unattributed?: boolean
 }
 
 /** One line naming people: "Review requested from the ENS steward: @ghadi8". */
@@ -202,11 +211,16 @@ export interface PeopleLine {
  */
 export interface PrParts {
   note: string
-  pages: { rel: string; url: string }[]
+  /** `url` is empty for a new page: there's nothing on `develop` to link to. */
+  pages: { rel: string; url: string; isNew: boolean }[]
   /** Who is asked to review, then who else is credited. Each person once. */
   people: PeopleLine[]
   /** The framework the contributor offered to steward. */
   volunteer: string | null
+  /** Said when a new page's `wrote` list had to stay empty. */
+  attribution: string | null
+  /** The "Type of change" lines that apply. */
+  types: string[]
   /** The "If applicable" lines that apply. All ticked; the rest are left out. */
   applicable: string[]
   /** Said once, in italics, at the very end. */
@@ -219,7 +233,10 @@ export function prParts({
   stewards = [],
   credited = [],
   volunteer = null,
+  unattributed = false,
 }: PrBodyInput): PrParts {
+  const anyNew = pages.some((p) => p.isNew)
+  const anyEdit = pages.some((p) => !p.isNew)
   const groups = stewards.filter((g) => g.people.length)
   const stewardSlugs = new Set(groups.flatMap((g) => g.people.map((p) => p.slug)))
   const people: PeopleLine[] = []
@@ -248,13 +265,27 @@ export function prParts({
 
   return {
     note: note.trim(),
-    pages: pages.map((p) => ({ rel: p.rel, url: `https://github.com/${REPO}/blob/${BRANCH}/${p.path}` })),
+    pages: pages.map((p) => ({
+      rel: p.rel,
+      url: p.isNew ? '' : `https://github.com/${REPO}/blob/${BRANCH}/${p.path}`,
+      isNew: !!p.isNew,
+    })),
     people,
     // A framework with nobody looking after it, and someone in front of us who
     // just did the work. Per the stewardship page there's no application form —
     // the path is contributing and saying so, which is exactly this.
     volunteer,
-    applicable: groups.length ? [TEMPLATE_LINES.steward] : [],
+    attribution: unattributed
+      ? 'The contributor has no profile in `contributors.json` yet, so the new page’s `wrote` list is empty.'
+      : null,
+    types: [
+      ...(anyNew ? [TEMPLATE_LINES.newContent, TEMPLATE_LINES.outline] : []),
+      ...(anyEdit ? [TEMPLATE_LINES.type] : []),
+    ],
+    applicable: [
+      ...(groups.length ? [TEMPLATE_LINES.steward] : []),
+      ...(anyNew ? [TEMPLATE_LINES.sidebar] : []),
+    ],
     footer: MENTIONS
       ? 'Sent with the Frameworks contribution wizard.'
       : 'Sent with the Frameworks contribution wizard. On this test copy, names are written without @, so nobody is notified.',
@@ -272,7 +303,8 @@ export function buildPrBody(input: PrBodyInput): string {
   const p = prParts(input)
 
   const lines = [`### ${TEMPLATE_SECTIONS.change}`, '', p.note || '_No note given._', '']
-  const link = (x: { rel: string; url: string }) => `[\`${x.rel}\`](${x.url})`
+  const link = (x: { rel: string; url: string; isNew: boolean }) =>
+    x.isNew ? `\`${x.rel}\` (new page)` : `[\`${x.rel}\`](${x.url})`
   if (p.pages.length === 1) lines.push(`- **Page:** ${link(p.pages[0])}`)
   else if (p.pages.length > 1) {
     lines.push('- **Pages:**', ...p.pages.map((x) => `  - ${link(x)}`))
@@ -287,7 +319,9 @@ export function buildPrBody(input: PrBodyInput): string {
     )
   }
 
-  lines.push('', `### ${TEMPLATE_SECTIONS.type}`, '', `- [x] ${TEMPLATE_LINES.type}`)
+  if (p.attribution) lines.push('', `**Attribution:** ${p.attribution}`)
+
+  lines.push('', `### ${TEMPLATE_SECTIONS.type}`, '', ...p.types.map((l) => `- [x] ${l}`))
   if (p.applicable.length) {
     lines.push('', `### ${TEMPLATE_SECTIONS.applicable}`, '', ...p.applicable.map((l) => `- [x] ${l}`))
   }

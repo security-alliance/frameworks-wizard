@@ -88,6 +88,8 @@ export interface PageEntry {
   frameworkTitle: string
   /** The names of the folders in `subdir`, in order. */
   subdirTitles: string[]
+  /** Written in the wizard, not on GitHub yet: see newPages.ts. */
+  isNew?: boolean
 }
 
 export interface FrameworkGroup {

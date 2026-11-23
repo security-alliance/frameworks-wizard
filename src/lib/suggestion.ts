@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { fetchRawPage, splitFrontmatter } from './github.js'
+import { splitFrontmatter } from './github.js'
+import { loadPage } from './newPages.js'
 import { parseFrontmatter } from './frontmatter.js'
 import { isDirty, joinBlocks, splitBlocks, syncChecklistImport } from './blocks.js'
 import { applyDraft, readDraft } from './drafts.js'
@@ -47,7 +48,7 @@ async function build(path: string): Promise<BuiltPage> {
   const draft = readDraft(path)
   if (!draft) return { ...empty, status: 'error' }
   try {
-    const raw = await fetchRawPage(path)
+    const raw = await loadPage(path)
     const { frontmatter, body } = splitFrontmatter(raw)
     const r = applyDraft(splitBlocks(body), draft)
     const blocks = syncChecklistImport(r.blocks)

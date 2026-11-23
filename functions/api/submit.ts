@@ -20,21 +20,36 @@
 // The one case that needs the contributor: the page in their copy differs from
 // the one they edited, in the same lines. Then they're asked to click "Sync fork"
 // on GitHub, which works where the app can't, because it's them doing it.
+//
+// NEW PAGES
+//
+// A page written from scratch comes with `create`: its sidebar title and the
+// entry it follows. It must not exist yet, upstream or in their copy, and its
+// sidebar line is written here into vocs.config.ts (see _lib/sidebar.ts). The
+// browser never sends that file.
 
 import { readSession, tokenUsable } from '../_lib/session.js'
 import { PRIVATE, failure, githubFailure, json, missingEnv, sameOrigin } from '../_lib/http.js'
 import { GitHubError, encodePath, gh, ghGraphql, toBase64 } from '../_lib/github.js'
 import { findFork } from '../_lib/fork.js'
 import { merge3 } from '../_lib/merge.js'
+import { addSidebarLinks } from '../_lib/sidebar.js'
+import type { SidebarLink } from '../_lib/sidebar.js'
 import { BRANCH, type Ctx } from '../_lib/env.js'
 
 interface FileInput {
   path: string
-  /** The page as the browser loaded it: where the contributor's edit starts. */
+  /** The page as the browser loaded it: where the contributor's edit starts.
+   *  Empty for a new page. */
   original: string
   /** The page with their edit. */
   content: string
+  /** Only on a new page: what goes in the sidebar, and after which entry (or,
+   *  first in its section, before which). */
+  create?: { title: string; after?: string; before?: string }
 }
+
+const SIDEBAR_FILE = 'vocs.config.ts'
 
 interface Input {
   /** One or more pages, all part of the same change: one commit, one PR. */
@@ -84,9 +99,14 @@ export async function onRequestPost({ request, env }: Ctx): Promise<Response> {
     const base = merge_base_commit.sha
 
     const paths = input.files.map((f) => f.path)
+    const creates = input.files.filter((f) => f.create)
+    // The sidebar is read with the pages, after them, when there's a page to
+    // add to it.
+    const read = [...paths, ...(creates.length ? [SIDEBAR_FILE] : [])]
+    const sidebarAt = creates.length ? paths.length : -1
     const [inCopy, upstreamNow] = await Promise.all([
-      readFiles(token, fork.repo, base, paths),
-      readFiles(token, upstream, BRANCH, paths),
+      readFiles(token, fork.repo, base, read),
+      readFiles(token, upstream, BRANCH, read),
     ])
 
     // Each page is checked on its own; anything that stops one stops the
@@ -96,10 +116,16 @@ export async function onRequestPost({ request, env }: Ctx): Promise<Response> {
     const stale: string[] = []
     const unchanged: string[] = []
     const overlap: string[] = []
+    const exists: string[] = []
     const additions: { path: string; contents: string }[] = []
     input.files.forEach((file, i) => {
       const copy = inCopy[i]
       const now = upstreamNow[i]
+      if (file.create) {
+        // Someone added a page at the same address meanwhile, here or upstream.
+        if (now !== null || copy !== null) return void exists.push(file.path)
+        return void additions.push({ path: file.path, contents: toBase64(file.content) })
+      }
       if (now === null) return void gone.push(file.path)
       // The page is newer than their copy: there's nothing in the copy to edit.
       if (copy === null) return void stale.push(file.path)
@@ -114,11 +140,36 @@ export async function onRequestPost({ request, env }: Ctx): Promise<Response> {
       }
       additions.push({ path: file.path, contents: toBase64(merged) })
     })
+    if (exists.length) {
+      return failure(
+        409,
+        'invalid',
+        `There's already a page at ${exists.map((p) => p.replace(/^docs\/pages\//, '')).join(', ')}. Remove your new page from the page list and create it again under another address.`,
+      )
+    }
     if (gone.length) return json({ error: 'gone', pages: gone }, 400, PRIVATE)
     // Their copy needs the contributor's own "Sync fork" first. `repo` is so the
     // Send step can link to it.
     if (stale.length) return json({ error: 'needs-sync', repo: fork.repo, pages: stale }, 409, PRIVATE)
     if (unchanged.length) return json({ error: 'unchanged', pages: unchanged }, 400, PRIVATE)
+
+    if (creates.length) {
+      const copy = inCopy[sidebarAt]
+      const now = upstreamNow[sidebarAt]
+      if (copy === null || now === null) {
+        return failure(500, 'server', "The docs' sidebar couldn't be read. Please tell us on Discord.")
+      }
+      const links: SidebarLink[] = creates.map((f) => ({
+        link: `/${f.path.replace(/^docs\/pages\//, '').replace(/\.mdx$/, '')}`,
+        text: f.create!.title,
+        after: f.create!.after,
+        before: f.create!.before,
+      }))
+      const sidebar = addSidebarLinks(copy, links)
+      if (typeof sidebar !== 'string') return failure(409, 'invalid', sidebar.error)
+      if (now !== copy && merge3(now, copy, sidebar) === null) overlap.push(SIDEBAR_FILE)
+      additions.push({ path: SIDEBAR_FILE, contents: toBase64(sidebar) })
+    }
 
     const branch = await createBranch(token, fork.repo, paths, base)
     try {
@@ -218,6 +269,13 @@ async function readInput(request: Request): Promise<Input | string> {
       return "One of these pages can't be edited with the wizard."
     }
     seen.add(path)
+    let create: FileInput['create']
+    if (f?.create !== undefined) {
+      const c = readCreate(path, f.create)
+      if (typeof c === 'string') return c
+      if (original !== '') return 'A new page has no earlier version.'
+      create = c
+    }
     if (
       typeof original !== 'string' ||
       typeof content !== 'string' ||
@@ -228,7 +286,7 @@ async function readInput(request: Request): Promise<Input | string> {
     }
     total += original.length + content.length
     if (original === content) return 'One of the pages has no changes to send.'
-    files.push({ path, original, content })
+    files.push(create ? { path, original, content, create } : { path, original, content })
   }
   if (total > MAX_TOTAL) return 'This suggestion is too large to send in one go.'
   if (typeof title !== 'string' || !title.trim() || title.length > MAX_TITLE || /[\r\n]/.test(title)) {
@@ -236,6 +294,37 @@ async function readInput(request: Request): Promise<Input | string> {
   }
   if (typeof body !== 'string' || body.length > MAX_BODY) return 'The description is too long.'
   return { files, title: title.trim(), body }
+}
+
+// A new page's address follows the contributing guide: kebab-case, normal
+// dashes only. It goes into a framework that's already there, after an entry
+// of that framework's.
+const NEW_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*\.mdx$/
+const LINK = /^\/[a-z0-9][a-z0-9/._-]*$/
+
+function readCreate(path: string, raw: unknown): FileInput['create'] | string {
+  const { title, after, before } = (raw ?? {}) as Record<string, unknown>
+  const anchor = typeof after === 'string' && after ? after : before
+  const name = path.split('/').pop()!
+  if (!NEW_NAME.test(name)) return 'A new page’s address can only have lowercase letters, numbers and dashes.'
+  if (typeof title !== 'string' || !title.trim() || title.length > 120 || /[\u0000-\u001f]/.test(title)) {
+    return 'A new page needs a title of up to 120 characters.'
+  }
+  const framework = path.split('/')[2]
+  if (typeof anchor !== 'string' || !LINK.test(anchor) || anchor.includes('..') || !anchor.startsWith(`/${framework}/`)) {
+    return 'A new page has to go next to another page of the same framework.'
+  }
+  // After a page in its own folder, which is how a new page can't invent a
+  // folder: the one it goes in already has a page in the sidebar.
+  const folder = (p: string) => p.slice(0, p.lastIndexOf('/'))
+  if (folder(anchor) !== folder(`/${path.replace(/^docs\/pages\//, '')}`)) {
+    return 'A new page has to go next to another page in the same folder.'
+  }
+  // The section's overview stays its first page.
+  if (anchor !== after && /\/overview$/.test(anchor)) {
+    return 'A new page goes after its section’s overview, not before it.'
+  }
+  return anchor === after ? { title: title.trim(), after: anchor } : { title: title.trim(), before: anchor }
 }
 
 // The same rules as the page picker (isEditablePage in src/lib/github.ts): an

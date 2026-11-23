@@ -8,6 +8,10 @@ import { Code } from '@tiptap/extension-code'
 import { Paragraph } from '@tiptap/extension-paragraph'
 import { TaskList, TaskItem } from '@tiptap/extension-list'
 import { Markdown } from 'tiptap-markdown'
+import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
+import { Decoration, DecorationSet } from '@tiptap/pm/view'
+import type { Node as PmNode } from '@tiptap/pm/model'
+import { FOLLOWS_TEXT, PLACEHOLDER_TEXTS } from './placeholders.js'
 
 // Inline code that can also be bold or a link: "**`version`**", or
 // "[`supply-chain/overview.mdx`](/supply-chain/overview)". TipTap's code
@@ -217,6 +221,156 @@ const pageStore = (editor: Editor): PageContextStorage =>
 /** Give a section's editor its place in the page. */
 export function setPageContext(editor: Editor, get: () => PageContext): void {
   pageStore(editor).get = get
+}
+
+/* ------------------------------------------------------------------ *
+ * placeholders: grey hints that are never saved (see placeholders.ts)
+ * ------------------------------------------------------------------ */
+
+// A paragraph or heading holding a placeholder carries it in `placeholder`,
+// with `placeholderAfter`, the real text before it (the Key Takeaway label, a
+// section-map link), or '' when the whole line was the hint. While its text is
+// still exactly that, the hint is drawn in grey: as the line's own placeholder
+// when it's empty, after the text otherwise. Neither attribute is rendered or
+// carried over by Enter.
+const PLACEHOLDER_TYPES = ['paragraph', 'heading']
+const placeholderKey = new PluginKey('placeholders')
+
+const isShowing = (node: PmNode) =>
+  !!node.attrs.placeholder && node.textContent === node.attrs.placeholderAfter
+
+const Placeholders = Extension.create({
+  name: 'placeholders',
+  addGlobalAttributes() {
+    return [
+      {
+        types: PLACEHOLDER_TYPES,
+        attributes: {
+          placeholder: { default: null, keepOnSplit: false, rendered: false },
+          placeholderAfter: { default: '', keepOnSplit: false, rendered: false },
+        },
+      },
+    ]
+  },
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: placeholderKey,
+        // A line with real text and a hint after it (the Key Takeaway label, a
+        // section-map link) is written by typing after that text. So while the
+        // hint shows, a cursor placed anywhere in the line, by a click on the
+        // label or the hint or by the arrow keys, goes to its end, after the
+        // colon. Once there's text of their own, the line is ordinary.
+        appendTransaction(_transactions, _old, state) {
+          const { selection } = state
+          if (!selection.empty) return null
+          const $at = selection.$from
+          const node = $at.parent
+          if (!PLACEHOLDER_TYPES.includes(node.type.name) || !node.attrs.placeholderAfter || !isShowing(node)) {
+            return null
+          }
+          const end = $at.end()
+          return $at.pos === end ? null : state.tr.setSelection(TextSelection.create(state.doc, end))
+        },
+        props: {
+          decorations(state) {
+            const marks: Decoration[] = []
+            state.doc.descendants((node, pos) => {
+              if (!PLACEHOLDER_TYPES.includes(node.type.name)) return true
+              if (!isShowing(node)) return false
+              const hint = node.attrs.placeholder as string
+              if (!node.attrs.placeholderAfter) {
+                marks.push(Decoration.node(pos, pos + node.nodeSize, { class: 'fw-placeholder', 'data-placeholder': hint }))
+              } else {
+                marks.push(
+                  Decoration.widget(
+                    pos + node.nodeSize - 1,
+                    () => {
+                      const span = document.createElement('span')
+                      span.className = 'fw-placeholder-after'
+                      span.textContent = hint
+                      return span
+                    },
+                    { side: 1, key: hint },
+                  ),
+                )
+              }
+              return false
+            })
+            return DecorationSet.create(state.doc, marks)
+          },
+        },
+      }),
+    ]
+  },
+})
+
+/**
+ * Turn each line that is, or ends with, a placeholder into an empty line (or
+ * its real text alone) showing the hint. Run once as a section opens, before
+ * its safety check; `editorMarkdown` writes the hints back, so the check sees
+ * the section exactly as it was.
+ */
+export function markPlaceholders(editor: Editor): void {
+  const { state } = editor
+  const found: { pos: number; node: PmNode; hint: string; after: string }[] = []
+  state.doc.descendants((node, pos) => {
+    if (!PLACEHOLDER_TYPES.includes(node.type.name)) return true
+    // Only plain text runs map character for character onto positions.
+    let plain = true
+    node.forEach((child) => {
+      if (!child.isText) plain = false
+    })
+    const text = node.textContent
+    // A whole line, or for the two that follow real text, the end of one.
+    const hint = plain
+      ? PLACEHOLDER_TEXTS.find((p) => text === p || (FOLLOWS_TEXT.includes(p) && text.endsWith(p)))
+      : undefined
+    if (hint) found.push({ pos, node, hint, after: text.slice(0, text.length - hint.length) })
+    return false
+  })
+  if (!found.length) return
+  const tr = state.tr
+  for (const f of found.reverse()) {
+    tr.delete(f.pos + 1 + f.after.length, f.pos + 1 + f.node.textContent.length)
+    tr.setNodeMarkup(f.pos, undefined, { ...f.node.attrs, placeholder: f.hint, placeholderAfter: f.after })
+  }
+  tr.setMeta('addToHistory', false)
+  editor.view.dispatch(tr)
+}
+
+// A `|` typed in a table cell. The converter writes cell text as it is, so
+// markdown read the pipe as the start of another cell: a row with one cell too
+// many, and after a reload a whole extra empty column (frameworks PR #698).
+// Each one is swapped for this stand-in before writing, and written back as
+// `\|`, which markdown reads as a pipe in the text.
+const CELL_PIPE = '\uE000'
+const CELL_TYPES = new Set(['tableCell', 'tableHeader'])
+
+/** The document as it's written out: placeholders still showing written back
+ *  in as text, and pipes in table cells marked for escaping. */
+function withPlaceholders(editor: Editor): PmNode {
+  const tr = editor.state.tr
+  // One character for one, so the positions below stay right.
+  const inCell = (pos: number) => {
+    const $pos = editor.state.doc.resolve(pos)
+    for (let d = $pos.depth; d > 0; d--) if (CELL_TYPES.has($pos.node(d).type.name)) return true
+    return false
+  }
+  editor.state.doc.descendants((node, pos) => {
+    if (!node.isText || !node.text?.includes('|') || !inCell(pos)) return
+    for (let i = node.text.indexOf('|'); i >= 0; i = node.text.indexOf('|', i + 1)) {
+      tr.replaceWith(pos + i, pos + i + 1, editor.schema.text(CELL_PIPE, node.marks))
+    }
+  })
+  const fills: { at: number; hint: string }[] = []
+  editor.state.doc.descendants((node, pos) => {
+    if (!PLACEHOLDER_TYPES.includes(node.type.name)) return true
+    if (isShowing(node)) fills.push({ at: pos + node.nodeSize - 1, hint: node.attrs.placeholder as string })
+    return false
+  })
+  for (const f of fills.reverse()) tr.insert(f.at, editor.schema.text(f.hint))
+  return tr.doc
 }
 
 /* ------------------------------------------------------------------ *
@@ -633,6 +787,7 @@ export const proseExtensions = [
   ChecklistFromBullet,
   ChecklistBoxes,
   PageContextExtension,
+  Placeholders,
   Markdown.configure({
     html: true,
     tightLists: true,
@@ -678,37 +833,11 @@ const DIVIDER_ROW_RE = /^([ \t>]*)\| ---(?: \| ---)* \|$/gm
  * alignment is on the header cells (see `align` above), read here in document
  * order, which is the order the tables are written in.
  */
-// A `|` typed in a table cell. The converter writes cell text as it is, so
-// markdown read the pipe as the start of another cell: a row with one cell too
-// many, and after a reload a whole extra empty column (frameworks PR #698).
-// Each one is swapped for this stand-in before writing, and written back as
-// `\|`, which markdown reads as a pipe in the text.
-const CELL_PIPE = '\uE000'
-const CELL_TYPES = new Set(['tableCell', 'tableHeader'])
-
-/** The document as it's written out, with pipes in table cells marked for escaping. */
-function withCellPipes(editor: Editor): Editor['state']['doc'] {
-  const tr = editor.state.tr
-  const inCell = (pos: number) => {
-    const $pos = editor.state.doc.resolve(pos)
-    for (let d = $pos.depth; d > 0; d--) if (CELL_TYPES.has($pos.node(d).type.name)) return true
-    return false
-  }
-  // One character for one, so the positions stay right.
-  editor.state.doc.descendants((node, pos) => {
-    if (!node.isText || !node.text?.includes('|') || !inCell(pos)) return
-    for (let i = node.text.indexOf('|'); i >= 0; i = node.text.indexOf('|', i + 1)) {
-      tr.replaceWith(pos + i, pos + i + 1, editor.schema.text(CELL_PIPE, node.marks))
-    }
-  })
-  return tr.doc
-}
-
 export function editorMarkdown(editor: Editor): string {
   assignChecklistIds(editor)
   const md = (
-    editor.storage as unknown as { markdown: { serializer: { serialize(doc: unknown): string } } }
-  ).markdown.serializer.serialize(withCellPipes(editor))
+    editor.storage as unknown as { markdown: { serializer: { serialize(doc: PmNode): string } } }
+  ).markdown.serializer.serialize(withPlaceholders(editor))
   const aligns: (string | null)[][] = []
   ;(editor.state.doc as unknown as DocNode).descendants((node) => {
     if (node.type.name !== 'table') return true
